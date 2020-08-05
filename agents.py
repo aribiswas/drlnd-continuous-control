@@ -12,6 +12,7 @@ Rev: _
 import numpy
 import torch
 import torch.optim as optim
+import torch.nn.functional as F
 from utils import advantage_function, clipped_ppo_loss
 
 class PPOAgent:
@@ -151,12 +152,13 @@ class PPOAgent:
         """
 
         # convert everything to torch.Tensor
-        states = torch.tensor(self.states, dtype=torch.float, device=self.device)
-        rewards = torch.tensor(self.rewards, dtype=torch.float, device=self.device)
+        states = torch.from_numpy(self.states).float().to(self.device)
+        rewards = torch.from_numpy(self.rewards).float().to(self.device)
+        probs = torch.from_numpy(self.probs).float().to(self.device)
 
         # compute V(s) and V(s+1)
         state_values = self.critic.get_value(states)
-        next_state_values = torch.cat(state_values[1:], torch.from_numpy(np.zeros(1)).float().to(self.device))
+        next_state_values = torch.cat(state_values[1:], torch.from_numpy(numpy.zeros(1)).float().to(self.device))
 
         # get the old and new probabilities
         new_probs = torch.tensor(self.probs, dtype=torch.float, device=self.device)
@@ -166,13 +168,25 @@ class PPOAgent:
         advantage = advantage_function(states, rewards, state_values, next_state_values,\
             self.horizon, self.discount_factor, self.gae_factor)
 
+        # compute target for critic loss
+        gammas = [self.discount_factor**k for k in range(self.horizon)]
+        target = rewards + gammas * next_state_values
+
+        # entropy regularization
+        entropy = -sum(probs * torch.log(probs))
+
         # compute the loss
         L_clip = clipped_ppo_loss(old_probs, new_probs, advantage, self.clip_factor)
+        L_vf = F.mse_loss(state_values, target)
+        loss = L_clip - L_vf + entropy
 
         # do backward pass and update network
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+
+        # update the old policy
+        self.old_policy.load_state_dict(policy.state_dict())
 
         # log the loss
         self.loss_log.append(loss.detach().cpu().numpy())
