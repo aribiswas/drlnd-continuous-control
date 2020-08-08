@@ -20,7 +20,7 @@ class PPOAgent:
     Implementation of actor-critic PPO agent with clipped loss function.
     """
 
-    def __init__(self, actor, critic,\
+    def __init__(self, actor, critic, seed,\
         horizon=256,\
         discount_factor=0.99,\
         gae_factor=0.95,\
@@ -91,14 +91,15 @@ class PPOAgent:
         """
 
         # initialize buffers
-        self.states = numpy.empty([1, self.horizon])
-        self.actions = numpy.empty([1, self.horizon])
-        self.rewards = numpy.empty([1, self.horizon])
-        self.dones = numpy.empty([1, self.horizon])
-        self.probs = numpy.empty([1, self.horizon])
+        self.states = numpy.empty([self.horizon, self.policy.num_obs])
+        self.actions = numpy.empty([self.horizon, self.policy.num_act])
+        self.rewards = numpy.empty([self.horizon, 1])
+        self.next_states = numpy.empty([self.horizon, self.policy.num_obs])
+        self.dones = numpy.empty([self.horizon, 1])
+        self.probs = numpy.empty([self.horizon, self.policy.num_act])
 
 
-    def step(self, state, action, reward, done, prob):
+    def step(self, state, action, reward, next_state, done, prob):
         """
         Step the agent and update policy when sufficient trajectories are collected.
 
@@ -121,11 +122,12 @@ class PPOAgent:
 
         """
         # add experience to buffer
-        self.states[self.time_count+1] = state
-        self.actions[self.time_count+1] = action
-        self.rewards[self.time_count+1] = reward
-        self.dones[self.time_count+1] = done
-        self.probs[self.time_count+1] = prob
+        self.states[self.time_count] = state
+        self.actions[self.time_count] = action
+        self.rewards[self.time_count] = reward
+        self.next_states[self.time_count] = next_state
+        self.dones[self.time_count] = done
+        self.probs[self.time_count] = prob
 
         # increment step counter
         self.step_count += 1
@@ -154,12 +156,13 @@ class PPOAgent:
         # convert everything to torch.Tensor
         states = torch.from_numpy(self.states).float().to(self.device)
         rewards = torch.from_numpy(self.rewards).float().to(self.device)
+        next_states = torch.from_numpy(self.next_states).float().to(self.device)
         probs = torch.from_numpy(self.probs).float().to(self.device)
 
         # compute V(s) and V(s+1)
         state_values = self.critic.get_value(states)
-        next_state_values = torch.cat(state_values[1:], torch.from_numpy(numpy.zeros(1)).float().to(self.device))
-
+        next_state_values = self.critic.get_value(next_states)
+        
         # get the old and new probabilities
         new_probs = torch.tensor(self.probs, dtype=torch.float, device=self.device)
         _, old_probs = self.old_policy.get_action(states)

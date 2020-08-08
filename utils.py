@@ -9,7 +9,7 @@ Revised: _
 @author: abiswas
 """
 
-def advantage_function(states, rewards, state_values, next_state_values, horizon, gamma, lambda):
+def advantage_function(states, rewards, state_values, next_state_values, horizon, gamma, gaelambda):
     """
     Compute the GAE advantage estimates.
 
@@ -36,7 +36,7 @@ def advantage_function(states, rewards, state_values, next_state_values, horizon
         Advantage estimates.
     """
 
-    coeffs = [(gamma*lambda)**j for j in range(horizon)]
+    coeffs = [(gamma*gaeambda)**j for j in range(horizon)]
     td_errors = rewards + gamma*next_state_values - state_values
     advantage = [c*d for c,d in zip(coeffs,td_errors)]
 
@@ -54,11 +54,9 @@ def clipped_ppo_loss(old_probs, new_probs, advantage, clip_factor):
 
     """
 
-    sign = numpy.array([1.0 if a>=0 else -1.0 for a in advantage])
-    g = [(1 + s * clip_factor) * a for s,a in zip(sign,advantage)]
-
     # policy ratio
     ratio = new_probs / old_probs
+    ratio = torch.clamp(ratio, 1-clip_factor, 1+clip_factor)
 
     # loss
     return min(ratio*advantage, g)
