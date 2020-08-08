@@ -7,11 +7,16 @@ class StochasticPolicy(nn.Module):
 
     def __init__(self, num_obs, num_act, seed):
         """
-        Neural network for learning to play PONG.
+        Neural network for a stochastic continuous action policy.
 
         Parameters
         ----------
-        None.
+        num_obs: number
+            Dimension of observations.
+        num_act: number
+            Dimension of actions.
+        seed: number
+            random seed.
 
         Returns
         -------
@@ -71,7 +76,7 @@ class StochasticPolicy(nn.Module):
 
         Parameters
         ----------
-        state : 80x80x1 grayscale image
+        state : numpy array
             State of the environment.
 
         Returns
@@ -82,12 +87,8 @@ class StochasticPolicy(nn.Module):
             Log probability of action.
 
         """
-        # input is 80x80x1 numpy array
-        # convert to torch tensor with dimension NxCxHxW
-        # N = mini batch size
-        # C = number of channels
-        # H = height of image
-        # W = width of image
+        
+        # convert to torch
         x = torch.from_numpy(state).float().to(self.device)
 
         # obtain mean and std from network
@@ -99,12 +100,12 @@ class StochasticPolicy(nn.Module):
 
         # sample action
         action = dist.sample()
-        action = torch.clamp(action, -1, 1)  # limit actions to [-1,1]
+        action = torch.clamp(action, -1, 1).detach().numpy()  # limit actions to [-1,1]
 
         # obtain log probabilities
         logp = dist.log_prob(action).detach()
 
-        return action.detach().numpy(), logp
+        return action, logp
     
 
 
@@ -113,11 +114,14 @@ class ValueNetwork(nn.Module):
 
     def __init__(self, num_obs, seed):
         """
-        Neural network for approximating a value function.
+        Neural network for approximating a value function V(s).
 
         Parameters
         ----------
-        None.
+        num_obs: number
+            Dimension of observations.
+        seed: number
+            Random seed.
 
         Returns
         -------
@@ -146,13 +150,6 @@ class ValueNetwork(nn.Module):
         x : numpy.array
             Input of the network.
 
-        Returns
-        -------
-        meanx: torch.Tensor
-            Mean of actions.
-        stdx: torch.Tensor
-            Std dev of actions.
-
         """
 
         x = F.relu(self.fc1(x))
@@ -164,19 +161,17 @@ class ValueNetwork(nn.Module):
 
     def get_value(self, state):
         """
-        Sample action from policy, given a state.
+        Get the state value V(s), given the state.
 
         Parameters
         ----------
-        state : 80x80x1 grayscale image
+        state : numpy array
             State of the environment.
 
         Returns
         -------
-        action : number
-            Move right (3) or left(4).
-        log_prob : torch.Tensor
-            Log probability of action.
+        torch.Tensor
+            State value V(s) of the observations.
 
         """
         
