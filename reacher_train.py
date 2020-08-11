@@ -8,13 +8,13 @@ import collections
 
 # PPO hyperparameters
 EPOCHS = 3
-HORIZON = 5000
-BATCHSIZE = 128
-GAMMA = 0.995
+HORIZON = 1001
+BATCHSIZE = 256
+GAMMA = 0.99
 LAMBDA = 0.95
-ALPHA = 1e-4
+ALPHA = 0.001
 EPSILON = 0.2
-BETA = 0.05
+BETA = 0.01
 
 # training options
 MAX_EPISODES = 5000      # Maximum number of training episodes
@@ -78,7 +78,7 @@ for ep_count in range(1,MAX_EPISODES):
         # sample action from the current policy
         action = actor.get_action(state)
         
-        #print(action)
+        print(action)
         
         # step the environment
         env_info = env.step(action)[brain_name]
