@@ -59,7 +59,7 @@ class PPOAgent:
 
         # create an optimizer
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=self.actor_LR)
-        self.critic_optimizer = optim.Adam(self.actor.parameters(), lr=self.critic_LR)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=self.critic_LR)
 
         # initialize logs
         self.actor_loss_log = [0]
@@ -67,7 +67,6 @@ class PPOAgent:
 
         # initialize step counter
         self.step_count = 0
-        self.time_count = 0
 
 
     def step(self, state, action, reward, next_state, done):
@@ -78,16 +77,20 @@ class PPOAgent:
         # add data to buffer
         self.buffer.add(state, action, reward, next_state, done, logp.detach().numpy())
 
-        # increment counters
+        # increment counter
         self.step_count += 1
-        self.time_count += 1
 
         # if horizon is reached, learn from experiences
-        if done or (self.time_count >= self.horizon):
+        if self.horizon % self.step_count == 0:
+            
+            # first calculate advantages and update memory
             self.update_advantages()
+            
+            # train the actor and critic
             self.learn()
+            
+            # empty the memory
             self.buffer.reset()
-            self.time_count = 0
 
 
     def learn(self):
@@ -116,7 +119,7 @@ class PPOAgent:
                 
                 # ---- TRAIN ACTOR ----
                 
-                # get the new probabilities
+                # get the new policy
                 pi, logps, entropy = self.actor.pi(states, actions)
                
                 # compute the clipped loss
@@ -152,14 +155,11 @@ class PPOAgent:
             
                 # log the losses
                 self.actor_loss_log.append(actor_loss.detach().cpu().numpy())
-                self.critic_loss_log.append(actor_loss.detach().cpu().numpy())
-                
-                
-            
+                self.critic_loss_log.append(critic_loss.detach().cpu().numpy())
+
         
     def update_advantages(self):
         
-        # convert buffer lists to numpy
         states = self.buffer.states
         next_states = self.buffer.next_states
         rewards = self.buffer.rewards
@@ -180,4 +180,5 @@ class PPOAgent:
                 
         # TODO: normalize advantages
         
+        # update memory
         self.buffer.advantages = adv

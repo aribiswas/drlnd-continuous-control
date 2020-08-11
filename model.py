@@ -23,7 +23,7 @@ class StochasticActor(nn.Module):
         self.stdfc1 = nn.Linear(128, 64)
         self.stdfc2 = nn.Linear(64, num_act)
         self.tanh = nn.Tanh()
-        self.logsoftmax = nn.Softmax(dim=0)
+        self.splus = nn.Softplus()
 
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         
@@ -33,9 +33,10 @@ class StochasticActor(nn.Module):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         meanx = F.relu(self.meanfc1(x))
-        meanx = self.tanh(self.meanfc2(meanx))
+        meanx = self.tanh(self.meanfc2(meanx))  # restrict mean [-1,1] using tanh
         stdx = F.relu(self.stdfc1(x))
-        stdx = self.logsoftmax(self.stdfc2(stdx))
+        stdx = self.tanh(self.stdfc2(stdx)) # restrict std [-1,1] using tanh
+        stdx = self.splus(stdx) # restrict std [0,1] using softplus
 
         return meanx, stdx
     
