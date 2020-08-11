@@ -9,187 +9,175 @@ Rev: _
 @author: abiswas
 """
 
-import numpy
+import numpy as np
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
-from utils import advantage_function, clipped_ppo_loss
+from utils import PPOMemory, random_batch_indices, advantage_function, compute_td_targets, clipped_ppo_loss
 
 class PPOAgent:
     """
     Implementation of actor-critic PPO agent with clipped loss function.
     """
 
-    def __init__(self, actor, critic, seed,\
-        horizon=256,\
-        discount_factor=0.99,\
-        gae_factor=0.95,\
-        learn_rate=0.01,\
-        clip_factor=0.2):
-        """
-        Initialize a REINFORCE agent.
-
-        Parameters
-        ----------
-        policy : torch.nn.Module
-            A neural network representing the policy.
-        trajectories : int, optional
-            Number of trajectories or rollouts for collecting experiences. The default is 3.
-        horizon : int, optional
-            Number of steps per trajectory. The default is 256.
-        gamma : float, optional
-            Discount factor. The default is 0.99.
-        alpha : float, optional
-            Learn rate for the policy. The default is 0.01.
-
-        Returns
-        -------
-        None.
-
-        """
+    def __init__(self, 
+                 actor, 
+                 critic,
+                 horizon=256,
+                 batch_size=64,
+                 epochs=3,
+                 discount_factor=0.99,
+                 gae_factor=0.95,
+                 actor_LR=0.001,
+                 critic_LR=0.001,
+                 clip_factor=0.2,
+                 entropy_factor=0.01):
+        
         self.horizon = horizon
+        self.batch_size = batch_size
+        self.epochs = epochs
         self.discount_factor = discount_factor
         self.gae_factor = gae_factor
         self.clip_factor = clip_factor
-        self.learn_rate = learn_rate
+        self.actor_LR = actor_LR
+        self.critic_LR = critic_LR
+        self.entropy_factor = entropy_factor
 
         # set the device
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
         # create two policy representations
-        self.policy = actor.to(self.device)
-        self.old_policy = actor.to(self.device)
+        self.actor = actor.to(self.device)
 
         # create critic representation
         self.critic = critic.to(self.device)
 
-        # initialize lists for storing experiences
-        self.reset_buffers()
+        # initialize a buffer for storing experiences
+        self.buffer = PPOMemory(state_dim=self.actor.num_obs, 
+                                act_dim=self.actor.num_act, 
+                                max_len=horizon)
 
         # create an optimizer
-        self.optimizer = optim.Adam(self.policy.parameters(), lr=self.learn_rate)
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=self.actor_LR)
+        self.critic_optimizer = optim.Adam(self.actor.parameters(), lr=self.critic_LR)
 
         # initialize logs
-        self.loss_log = [0]
+        self.actor_loss_log = [0]
+        self.critic_loss_log = [0]
 
-        # initialize counters
+        # initialize step counter
         self.step_count = 0
         self.time_count = 0
 
 
-    def reset_buffers(self):
-        """
-        Reset the experience buffers to empty.
+    def step(self, state, action, reward, next_state, done):
+        
+        # get the log probability pi(a|s)
+        _, logp, _ = self.actor.pi(state, action)
+        
+        # add data to buffer
+        self.buffer.add(state, action, reward, next_state, done, logp.detach().numpy())
 
-        Parameters
-        -------
-        None.
-
-        Returns
-        -------
-        None.
-        """
-
-        # initialize buffers
-        self.states = numpy.empty([self.horizon, self.policy.num_obs])
-        self.actions = numpy.empty([self.horizon, self.policy.num_act])
-        self.rewards = numpy.empty([self.horizon, 1])
-        self.next_states = numpy.empty([self.horizon, self.policy.num_obs])
-        self.dones = numpy.empty([self.horizon, 1])
-        self.probs = numpy.empty([self.horizon, self.policy.num_act])
-
-
-    def step(self, state, action, reward, next_state, done, prob):
-        """
-        Step the agent and update policy when sufficient trajectories are collected.
-
-        Parameters
-        ----------
-        state : numpy array
-            Current state.
-        action : numpy array
-            Action taken at the current state.
-        reward : numpy array
-            Reward for the action.
-        done : numpy array
-            Flag for episode termination.
-        prob : numpy array
-            Probability of action.
-
-        Returns
-        -------
-        None.
-
-        """
-        # add experience to buffer
-        self.states[self.time_count] = state
-        self.actions[self.time_count] = action
-        self.rewards[self.time_count] = reward
-        self.next_states[self.time_count] = next_state
-        self.dones[self.time_count] = done
-        self.probs[self.time_count] = prob
-
-        # increment step counter
+        # increment counters
         self.step_count += 1
         self.time_count += 1
 
         # if horizon is reached, learn from experiences
-        if done or (self.step_count >= self.horizon):
+        if done or (self.time_count >= self.horizon):
+            self.update_advantages()
             self.learn()
-            self.reset_buffers()
+            self.buffer.reset()
             self.time_count = 0
-        else:
-            # keep logging the last loss
-            self.loss_log.append(self.loss_log[-1])
 
 
     def learn(self):
-        """
-        Learn from collected experiences and update the policy.
-
-        Returns
-        -------
-        None.
-
-        """
-
-        # convert everything to torch.Tensor
-        states = torch.from_numpy(self.states).float().to(self.device)
-        rewards = torch.from_numpy(self.rewards).float().to(self.device)
-        next_states = torch.from_numpy(self.next_states).float().to(self.device)
-        probs = torch.from_numpy(self.probs).float().to(self.device)
-
-        # compute V(s) and V(s+1)
-        state_values = self.critic.get_value(states)
-        next_state_values = self.critic.get_value(next_states)
         
-        # get the old and new probabilities
-        new_probs = torch.tensor(self.probs, dtype=torch.float, device=self.device)
-        _, old_probs = self.old_policy.get_action(states)
-
-        # compute the advantage
-        advantage = advantage_function(states, rewards, state_values, next_state_values,\
-            self.horizon, self.discount_factor, self.gae_factor)
-
-        # compute target for critic loss
-        gammas = [self.discount_factor**k for k in range(self.horizon)]
-        target = rewards + gammas * next_state_values
-
-        # entropy regularization
-        entropy = -sum(probs * torch.log(probs))
-
-        # compute the loss
-        L_clip = clipped_ppo_loss(old_probs, new_probs, advantage, self.clip_factor)
-        L_vf = F.mse_loss(state_values, target)
-        loss = L_clip - L_vf + entropy
-
-        # do backward pass and update network
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-
-        # update the old policy
-        self.old_policy.load_state_dict(policy.state_dict())
-
-        # log the loss
-        self.loss_log.append(loss.detach().cpu().numpy())
+        # train
+        for epochs in range(self.epochs):
+            
+            # DEBUG
+            #print('Epoch={:d}\n'.format(epochs))
+            
+            # create batch indices for training
+            # The idea is to divide the experience data into chunks of size 
+            # equal to batch_size
+            batch_indices = random_batch_indices(self.batch_size, self.horizon)
+            
+            batch_ct = 0
+            
+            for batch_idx in batch_indices:
+                
+                # DEBUG
+                #batch_ct += 1
+                #print('Batch={:d}\n'.format(batch_ct))
+            
+                # sample batch from memory
+                states, actions, rewards, next_states, advantages, old_logps = self.buffer.sample(batch_idx, self.device)
+                
+                # ---- TRAIN ACTOR ----
+                
+                # get the new probabilities
+                pi, logps, entropy = self.actor.pi(states, actions)
+               
+                # compute the clipped loss
+                L_clip = clipped_ppo_loss(old_logps, logps, advantages, self.clip_factor)
+                
+                # entropy bonus for exploration
+                L_en = self.entropy_factor * entropy
+                
+                # total loss
+                actor_loss = L_clip + L_en
+                
+                # update policy
+                # TODO: clip gradients after backward pass, before optim step
+                self.actor_optimizer.zero_grad()
+                actor_loss.backward()
+                self.actor_optimizer.step()
+                
+                # ---- TRAIN CRITIC ----
+                
+                # compute td targets
+                state_values = self.critic.get_value(states)
+                next_state_values = self.critic.get_value(next_states)   # need grad here, so no detach
+                targets = compute_td_targets(next_state_values, rewards, self.discount_factor, self.device)
+                
+                # critic loss
+                critic_loss = F.mse_loss(state_values, targets)
+    
+                # do backward pass and update network
+                # TODO: clip gradients after backward pass, before optim step
+                self.critic_optimizer.zero_grad()
+                critic_loss.backward()
+                self.critic_optimizer.step()
+            
+                # log the losses
+                self.actor_loss_log.append(actor_loss.detach().cpu().numpy())
+                self.critic_loss_log.append(actor_loss.detach().cpu().numpy())
+                
+                
+            
+        
+    def update_advantages(self):
+        
+        # convert buffer lists to numpy
+        states = self.buffer.states
+        next_states = self.buffer.next_states
+        rewards = self.buffer.rewards
+        
+        # compute V(s) and V(s+1)
+        # advantages are not used in critic update, so we can detach
+        state_values = self.critic.get_value(states).detach().numpy()
+        next_state_values = self.critic.get_value(next_states).detach().numpy()
+        
+        # compute advantages
+        adv = advantage_function(states, 
+                                 rewards, 
+                                 state_values, 
+                                 next_state_values, 
+                                 self.horizon, 
+                                 self.discount_factor, 
+                                 self.gae_factor)
+                
+        # TODO: normalize advantages
+        
+        self.buffer.advantages = adv

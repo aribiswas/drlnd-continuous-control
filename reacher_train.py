@@ -1,17 +1,20 @@
 # -*- coding: utf-8 -*-
 
 from unityagents import UnityEnvironment
-from model import StochasticPolicy, ValueNetwork
+from model import StochasticActor, Critic
 from agents import PPOAgent
 import numpy as np
 import collections
 
 # PPO hyperparameters
-HORIZON = 256
+EPOCHS = 3
+HORIZON = 1001
+BATCHSIZE = 256
 GAMMA = 0.99
 LAMBDA = 0.95
-LEARN_RATE = 0.001
+ALPHA = 0.001
 EPSILON = 0.2
+BETA = 0.01
 
 # training options
 MAX_EPISODES = 5000      # Maximum number of training episodes
@@ -32,16 +35,22 @@ env_info = env.reset(train_mode=False)[brain_name]
 osize = 33
 asize = 4
 
-# seed
-seed = 0
-
 # create actor and critic neural networks
-actor = StochasticPolicy(osize, asize, seed)
-critic = ValueNetwork(osize, seed)
+actor = StochasticActor(osize, asize, seed=0)
+critic = Critic(osize, seed=0)
 
 # create PPO agent
-agent = PPOAgent(actor, critic, seed, horizon=HORIZON, discount_factor=GAMMA, \
-                 gae_factor=LAMBDA, learn_rate=LEARN_RATE, clip_factor=EPSILON)
+agent = PPOAgent(actor, 
+                 critic, 
+                 horizon=HORIZON, 
+                 batch_size=BATCHSIZE,
+                 epochs=EPOCHS,
+                 discount_factor=GAMMA, 
+                 gae_factor=LAMBDA, 
+                 actor_LR=ALPHA,
+                 critic_LR=ALPHA, 
+                 clip_factor=EPSILON,
+                 entropy_factor=BETA)
 
 # log scores
 reward_log = []
@@ -60,9 +69,16 @@ for ep_count in range(1,MAX_EPISODES):
     
     ep_reward = 0
     
-    for t in range(1,MAX_STEPS_PER_EPISODE):
+    # DEBUG
+    #print('Episode={:d}\n'.format(ep_count))
+    #t_count = 0
+    
+    #for t in range(1,MAX_STEPS_PER_EPISODE):
+    while True:
         # sample action from the current policy
-        action, logp = actor.get_action(state)
+        action = actor.get_action(state)
+        
+        print(action)
         
         # step the environment
         env_info = env.step(action)[brain_name]
@@ -71,13 +87,17 @@ for ep_count in range(1,MAX_EPISODES):
         done = env_info.local_done[0]
         
         # step the agent
-        agent.step(state,action,reward,next_state,done,logp)
+        agent.step(state,action,reward,next_state,done)
         
         state = next_state
         ep_reward += reward
         
+        #t_count += 1
+        
         # terminate if done
         if done:
+            # DEBUG
+            #print('Terminated at={:d} steps\n'.format(t_count))
             break
     
     # print training progress
@@ -85,8 +105,8 @@ for ep_count in range(1,MAX_EPISODES):
     avg_reward = np.mean(avg_window)
     avg_log.append(avg_reward)
     reward_log.append(ep_reward)
-    if VERBOSE and (ep_count==1 or ep_count%100==0):
-        print('Episode: {:4d} \tEpisode Reward: {:4.2f} \tAverage Reward: {:4.2f} \tEpsilon: {:6.4f} \tLoss: {:6.4f}'.format(ep_count,ep_reward,avg_reward,agent.epsilon,agent.loss_log[ep_count]))
+    if VERBOSE and (ep_count==1 or ep_count%1==0):
+        print('Episode: {:4d} \tAverage Reward: {:4.2f} \tActor Loss: {:6.4f} \tCritic Loss: {:6.4f}'.format(ep_count,avg_reward,agent.actor_loss_log[-1],agent.critic_loss_log[-1]))
     
     # check if env is solved
     if avg_reward >= 30:
