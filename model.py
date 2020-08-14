@@ -19,7 +19,7 @@ class StochasticActor(nn.Module):
         self.fc1 = nn.Linear(num_obs, 256)
         self.fc2 = nn.Linear(256, 128)
         self.meanfc1 = nn.Linear(128, 64)
-        self.meanfc2 = nn.Linear(64, 4)
+        self.meanfc2 = nn.Linear(64, num_act)
         #self.stdfc1 = nn.Linear(128, 64)
         #self.stdfc2 = nn.Linear(64, num_act)
         self.tanh = nn.Tanh()
@@ -32,8 +32,10 @@ class StochasticActor(nn.Module):
 
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
+        
         meanx = F.relu(self.meanfc1(x))
         meanx = self.tanh(self.meanfc2(meanx))
+        
         #stdx = F.relu(self.stdfc1(x))
         #stdx = self.logsoftmax(self.stdfc2(stdx))
         stdx = 0.5 * torch.ones(self.num_act).float().to(self.device)

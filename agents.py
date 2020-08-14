@@ -82,8 +82,14 @@ class PPOAgent:
 
         # if horizon is reached, learn from experiences
         if self.time_count >= self.horizon:
+            
+            # compute advantages
             self.update_advantages()
+            
+            # train actor and critic
             self.learn()
+            
+            # reset memory
             self.buffer.reset()
             self.time_count = 0
 
@@ -93,22 +99,13 @@ class PPOAgent:
         # train
         for epochs in range(self.epochs):
             
-            # DEBUG
-            #print('Epoch={:d}\n'.format(epochs))
-            
             # create batch indices for training
             # The idea is to divide the experience data into chunks of size 
             # equal to batch_size
             batch_indices = random_batch_indices(self.batch_size, self.horizon)
-            
-            batch_ct = 0
-            
+
             for batch_idx in batch_indices:
                 
-                # DEBUG
-                #batch_ct += 1
-                #print('Batch={:d}\n'.format(batch_ct))
-            
                 # sample batch from memory
                 states, actions, rewards, next_states, advantages, old_logps = self.buffer.sample(batch_idx, self.device)
                 
@@ -152,8 +149,6 @@ class PPOAgent:
                 self.actor_loss_log.append(actor_loss.detach().cpu().numpy())
                 self.critic_loss_log.append(critic_loss.detach().cpu().numpy())
                 
-                
-            
         
     def update_advantages(self):
         

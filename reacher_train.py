@@ -12,7 +12,7 @@ HORIZON = 512
 BATCHSIZE = 128
 GAMMA = 0.99
 LAMBDA = 0.95
-ALPHA = 0.001
+ALPHA = 1e-4
 EPSILON = 0.2
 BETA = 0.01
 
@@ -69,11 +69,6 @@ for ep_count in range(1,MAX_EPISODES):
     
     ep_reward = 0
     
-    # DEBUG
-    #print('Episode={:d}\n'.format(ep_count))
-    #t_count = 0
-    
-    #for t in range(1,MAX_STEPS_PER_EPISODE):
     while True:
         # sample action from the current policy
         action = actor.get_action(state)
@@ -90,12 +85,8 @@ for ep_count in range(1,MAX_EPISODES):
         state = next_state
         ep_reward += reward
         
-        #t_count += 1
-        
         # terminate if done
         if done:
-            # DEBUG
-            #print('Terminated at={:d} steps\n'.format(t_count))
             break
     
     # print training progress
@@ -104,11 +95,11 @@ for ep_count in range(1,MAX_EPISODES):
     avg_log.append(avg_reward)
     reward_log.append(ep_reward)
     if VERBOSE and (ep_count==1 or ep_count%1==0):
-        print('Episode: {:4d} \tAverage Reward: {:4.2f} \tActor Loss: {:6.4f} \tCritic Loss: {:6.4f}'.format(ep_count,avg_reward,agent.actor_loss_log[-1],agent.critic_loss_log[-1]))
+        print('Episode: {:4d} \tAverage Reward: {:4.2f} \tActor Loss: {:8.4f} \tCritic Loss: {:8.4f}'.format(ep_count,avg_reward,agent.actor_loss_log[-1],agent.critic_loss_log[-1]))
     
     # check if env is solved
     if avg_reward >= 30:
-        print('\nEnvironment solved in {:d} episodes!\tAverage Reward: {:.2f}'.format(ep_count, avg_reward))
+        print('\nEnvironment solved in {:d} episodes!\tAverage Reward: {:4.2f}'.format(ep_count, avg_reward))
         torch.save(agent.Q.state_dict(), 'checkpoint.pth')
         break
 
