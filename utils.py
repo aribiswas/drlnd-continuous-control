@@ -22,8 +22,7 @@ def compute_td_targets(next_state_values, rewards, gamma, device='cpu'):
     return target
 
 
-def advantage_function(states, 
-                       rewards, 
+def advantage_function(rewards, 
                        state_values, 
                        next_state_values, 
                        horizon, 
@@ -44,12 +43,12 @@ def clipped_ppo_loss(old_logps, new_logps, advantages, clip_factor, device='cpu'
     # likelihood ratio
     ratio = torch.exp(new_logps - old_logps)
     
-    # clipped loss
-    loss = torch.clamp(ratio * advantages, 1-clip_factor, 1+clip_factor).to(device)
+    # clipped ratio
+    clipped_ratio = torch.clamp(ratio, 1-clip_factor, 1+clip_factor)
     
-    #return -loss.mean(dim=1,keepdim=True)
+    loss = -torch.min(ratio*advantages, clipped_ratio * advantages).mean()
     
-    return -loss.mean()
+    return loss
 
 
 def random_batch_indices(batch_size, data_size):

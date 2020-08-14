@@ -46,10 +46,8 @@ class PPOAgent:
         # set the device
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-        # create two policy representations
+        # create actor and critic representations
         self.actor = actor.to(self.device)
-
-        # create critic representation
         self.critic = critic.to(self.device)
 
         # initialize a buffer for storing experiences
@@ -59,7 +57,7 @@ class PPOAgent:
 
         # create an optimizer
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=self.actor_LR)
-        self.critic_optimizer = optim.Adam(self.actor.parameters(), lr=self.critic_LR)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=self.critic_LR)
 
         # initialize logs
         self.actor_loss_log = [0]
@@ -83,7 +81,7 @@ class PPOAgent:
         self.time_count += 1
 
         # if horizon is reached, learn from experiences
-        if done or (self.time_count >= self.horizon):
+        if self.time_count >= self.horizon:
             self.update_advantages()
             self.learn()
             self.buffer.reset()
@@ -152,7 +150,7 @@ class PPOAgent:
             
                 # log the losses
                 self.actor_loss_log.append(actor_loss.detach().cpu().numpy())
-                self.critic_loss_log.append(actor_loss.detach().cpu().numpy())
+                self.critic_loss_log.append(critic_loss.detach().cpu().numpy())
                 
                 
             
@@ -170,14 +168,14 @@ class PPOAgent:
         next_state_values = self.critic.get_value(next_states).detach().numpy()
         
         # compute advantages
-        adv = advantage_function(states, 
-                                 rewards, 
+        adv = advantage_function(rewards, 
                                  state_values, 
                                  next_state_values, 
                                  self.horizon, 
                                  self.discount_factor, 
                                  self.gae_factor)
                 
-        # TODO: normalize advantages
+        # normalize advantages
+        adv = (adv - np.mean(adv)) / (np.std(adv) + 1.e-10)
         
         self.buffer.advantages = adv

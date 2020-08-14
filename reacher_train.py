@@ -8,8 +8,8 @@ import collections
 
 # PPO hyperparameters
 EPOCHS = 3
-HORIZON = 1001
-BATCHSIZE = 256
+HORIZON = 512
+BATCHSIZE = 128
 GAMMA = 0.99
 LAMBDA = 0.95
 ALPHA = 0.001
@@ -77,8 +77,6 @@ for ep_count in range(1,MAX_EPISODES):
     while True:
         # sample action from the current policy
         action = actor.get_action(state)
-        
-        print(action)
         
         # step the environment
         env_info = env.step(action)[brain_name]
