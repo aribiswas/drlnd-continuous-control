@@ -13,7 +13,7 @@ import torch
 import numpy as np
 
 
-def discounted_rtg(rewards, gamma, device='cpu'):
+def discounted_rtg(rewards, gamma):
     """
     Compute the discounted rewards-to-go.
     
@@ -101,7 +101,7 @@ def gae(rewards, dones, state_values, next_state_values, gamma, lambdaa):
     return adv
 
 
-def clipped_ppo_loss(old_logps, new_logps, advantages, clip_factor, device='cpu'):
+def clipped_ppo_loss(old_logps, new_logps, advantages, clip_factor):
     """
     Compute the clipped PPO loss.
 

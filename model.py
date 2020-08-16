@@ -74,20 +74,7 @@ class StochasticActor(nn.Module):
             logp = dist.log_prob(act).sum(-1)
         
         return dist, logp, entropy
-
-
-    def get_action(self, state):
-        
-        with torch.no_grad():
-            
-            # get the policy
-            dist, _, _ = self.pi(state)
     
-            # sample action
-            action = dist.sample()
-            action = torch.clamp(action, -1, 1)  # limit actions to [-1,1]
-
-        return action.numpy()
     
 
 class Critic(nn.Module):

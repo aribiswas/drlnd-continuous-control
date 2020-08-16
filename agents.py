@@ -12,7 +12,7 @@ Rev: _
 import numpy as np
 import torch
 import torch.optim as optim
-import torch.nn.functional as F
+from model import StochasticActor, Critic
 from utils import PPOMemory, discounted_rtg, gae, clipped_ppo_loss
 
 class PPOAgent:
@@ -21,8 +21,8 @@ class PPOAgent:
     """
 
     def __init__(self, 
-                 actor, 
-                 critic,
+                 osize, 
+                 asize,
                  horizon=256,
                  discount_factor=0.99,
                  gae_factor=0.95,
@@ -38,6 +38,10 @@ class PPOAgent:
         self.actor_LR = actor_LR
         self.critic_LR = critic_LR
         self.entropy_factor = entropy_factor
+        
+        # create actor and critic neural networks
+        actor = StochasticActor(osize, asize, seed=0)
+        critic = Critic(osize, seed=0)
 
         # set the device
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -63,6 +67,34 @@ class PPOAgent:
         # initialize step counter
         self.step_count = 0
         self.time_count = 0
+        
+        
+    def get_action(self, state):
+        """
+        Sample action from the current policy.
+
+        Parameters
+        ----------
+        state : numpy array or torch tensor
+            State of the environment.
+
+        Returns
+        -------
+        action : numpy array
+            Actions sampled from the policy, bounded in [-1,1].
+
+        """
+        
+        with torch.no_grad():
+            
+            # get the policy
+            dist, _, _ = self.actor.pi(state)
+    
+            # sample action
+            action = dist.sample()
+            action = torch.clamp(action, -1, 1)  # limit actions to [-1,1]
+
+        return action.numpy()
 
 
     def step(self, state, action, reward, next_state, done):

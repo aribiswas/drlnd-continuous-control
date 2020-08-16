@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
 
 from unityagents import UnityEnvironment
-from model import StochasticActor, Critic
 from agents import PPOAgent
 import numpy as np
 import collections
 
 # PPO hyperparameters
-HORIZON = 1001
+HORIZON = 200
 GAMMA = 0.995
 LAMBDA = 0.95
 ALPHA_CRITIC = 2e-3
@@ -33,13 +32,9 @@ env_info = env.reset(train_mode=False)[brain_name]
 osize = 33
 asize = 4
 
-# create actor and critic neural networks
-actor = StochasticActor(osize, asize, seed=0)
-critic = Critic(osize, seed=0)
-
 # create PPO agent
-agent = PPOAgent(actor, 
-                 critic, 
+agent = PPOAgent(osize, 
+                 asize, 
                  horizon=HORIZON, 
                  discount_factor=GAMMA, 
                  gae_factor=LAMBDA, 
@@ -67,7 +62,7 @@ for ep_count in range(1,MAX_EPISODES):
     
     while True:
         # sample action from the current policy
-        action = agent.actor.get_action(state)
+        action = agent.get_action(state)
         
         # step the environment
         env_info = env.step(action)[brain_name]
