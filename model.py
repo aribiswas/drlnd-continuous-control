@@ -18,12 +18,10 @@ class StochasticActor(nn.Module):
         # layers
         self.fc1 = nn.Linear(num_obs, 256)
         self.fc2 = nn.Linear(256, 128)
+        self.bn1 = nn.BatchNorm1d(256)
         self.meanfc1 = nn.Linear(128, 64)
         self.meanfc2 = nn.Linear(64, num_act)
-        #self.stdfc1 = nn.Linear(128, 64)
-        #self.stdfc2 = nn.Linear(64, num_act)
         self.tanh = nn.Tanh()
-        #self.logsoftmax = nn.LogSoftmax()
 
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         
@@ -36,11 +34,9 @@ class StochasticActor(nn.Module):
         meanx = F.relu(self.meanfc1(x))
         meanx = self.tanh(self.meanfc2(meanx))
         
-        #stdx = F.relu(self.stdfc1(x))
-        #stdx = self.logsoftmax(self.stdfc2(stdx))
-        stdx = 0.5 * torch.ones(self.num_act).float().to(self.device)
+        logstdx = 0.5 * torch.ones(self.num_act).float().to(self.device)
 
-        return meanx, torch.exp(stdx)
+        return meanx, logstdx
     
     
     def pi(self, state, action=None):
@@ -54,10 +50,10 @@ class StochasticActor(nn.Module):
             raise TypeError("State input must be a numpy array or torch Tensor.")
             
         # obtain mean and std from network
-        mean, std = self.forward(x)
+        mean, logstd = self.forward(x)
 
         # create Normal distribution
-        dist = Normal(mean, std)
+        dist = Normal(mean, torch.exp(logstd))
         
         # get the entropy
         entropy = dist.entropy().mean()
@@ -73,7 +69,9 @@ class StochasticActor(nn.Module):
                 act = action
             else:
                 raise TypeError("Action input must be a numpy array or torch Tensor.")
-            logp = dist.log_prob(act)
+            
+            # take the log prob of all actions and sum them
+            logp = dist.log_prob(act).sum(-1)
         
         return dist, logp, entropy
 
@@ -103,9 +101,9 @@ class Critic(nn.Module):
         self.num_obs = num_obs
 
         # layers
-        self.fc1 = nn.Linear(num_obs, 256)
-        self.fc2 = nn.Linear(256, 128)
-        self.fc3 = nn.Linear(128, 1)
+        self.fc1 = nn.Linear(num_obs,256)
+        self.fc2 = nn.Linear(256,128)
+        self.fc3 = nn.Linear(128,1)
 
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         

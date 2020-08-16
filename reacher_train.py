@@ -7,19 +7,17 @@ import numpy as np
 import collections
 
 # PPO hyperparameters
-EPOCHS = 3
-HORIZON = 512
-BATCHSIZE = 128
-GAMMA = 0.99
+HORIZON = 1001
+GAMMA = 0.995
 LAMBDA = 0.95
-ALPHA = 1e-4
-EPSILON = 0.2
-BETA = 0.01
+ALPHA_CRITIC = 2e-3
+ALPHA_ACTOR = 1e-4
+CLIP_FACTOR = 0.2
+ENTROPY_FACTOR = 0.05
 
 # training options
 MAX_EPISODES = 5000      # Maximum number of training episodes
 AVG_WINDOW = 100         # Window length for calculating score averages
-MAX_STEPS_PER_EPISODE = 1000    # Maximum agent steps per episode
 
 # create environment
 env = UnityEnvironment(file_name='Reacher.app')
@@ -43,14 +41,12 @@ critic = Critic(osize, seed=0)
 agent = PPOAgent(actor, 
                  critic, 
                  horizon=HORIZON, 
-                 batch_size=BATCHSIZE,
-                 epochs=EPOCHS,
                  discount_factor=GAMMA, 
                  gae_factor=LAMBDA, 
-                 actor_LR=ALPHA,
-                 critic_LR=ALPHA, 
-                 clip_factor=EPSILON,
-                 entropy_factor=BETA)
+                 actor_LR=ALPHA_ACTOR,
+                 critic_LR=ALPHA_CRITIC, 
+                 clip_factor=CLIP_FACTOR,
+                 entropy_factor=ENTROPY_FACTOR)
 
 # log scores
 reward_log = []
@@ -71,7 +67,7 @@ for ep_count in range(1,MAX_EPISODES):
     
     while True:
         # sample action from the current policy
-        action = actor.get_action(state)
+        action = agent.actor.get_action(state)
         
         # step the environment
         env_info = env.step(action)[brain_name]
@@ -94,13 +90,13 @@ for ep_count in range(1,MAX_EPISODES):
     avg_reward = np.mean(avg_window)
     avg_log.append(avg_reward)
     reward_log.append(ep_reward)
-    if VERBOSE and (ep_count==1 or ep_count%1==0):
-        print('Episode: {:4d} \tAverage Reward: {:4.2f} \tActor Loss: {:8.4f} \tCritic Loss: {:8.4f}'.format(ep_count,avg_reward,agent.actor_loss_log[-1],agent.critic_loss_log[-1]))
-    
+    if VERBOSE and (ep_count==1 or ep_count%10==0):
+        print('Episode: {:4d} \tAverage Reward: {:4.2f} \tActor Loss: {:8.4f} \tPPO Ratio: {:6.4f} \tCritic Loss: {:8.4f}'.format(ep_count,avg_reward,agent.actor_loss_log[-1],agent.ratio_log[-1],agent.critic_loss_log[-1]))
+        
     # check if env is solved
     if avg_reward >= 30:
         print('\nEnvironment solved in {:d} episodes!\tAverage Reward: {:4.2f}'.format(ep_count, avg_reward))
-        torch.save(agent.Q.state_dict(), 'checkpoint.pth')
+        torch.save(actor.state_dict(), 'checkpoint.pth')
         break
 
 # Close environment
@@ -113,16 +109,13 @@ ax1 = axarr[0]
 ax1.set_title("Training Results")
 ax1.set_xlabel("Episodes")
 ax1.set_ylabel("Average Reward")
-ax1.set_xlim([0, ep_count+20])
-ax1.set_ylim([0, 20])
-ax1.plot(range(1,ep_count+1),avg_log)
+ax1.plot(avg_log)
 
 # plot loss
 ax2 = axarr[1]
 ax2.set_xlabel("Steps")
 ax2.set_ylabel("Loss")
-ax2.set_xlim([0, agent.stepcount+20])
-ax2.plot(range(agent.minibatchsize,agent.stepcount),agent.loss_log)
+ax2.plot(actor_loss_log)
 
 fig.tight_layout(pad=1.0)
 plt.show()

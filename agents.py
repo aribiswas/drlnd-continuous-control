@@ -13,7 +13,7 @@ import numpy as np
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
-from utils import PPOMemory, random_batch_indices, advantage_function, compute_td_targets, clipped_ppo_loss
+from utils import PPOMemory, discounted_rtg, gae, clipped_ppo_loss
 
 class PPOAgent:
     """
@@ -24,8 +24,6 @@ class PPOAgent:
                  actor, 
                  critic,
                  horizon=256,
-                 batch_size=64,
-                 epochs=3,
                  discount_factor=0.99,
                  gae_factor=0.95,
                  actor_LR=0.001,
@@ -34,8 +32,6 @@ class PPOAgent:
                  entropy_factor=0.01):
         
         self.horizon = horizon
-        self.batch_size = batch_size
-        self.epochs = epochs
         self.discount_factor = discount_factor
         self.gae_factor = gae_factor
         self.clip_factor = clip_factor
@@ -62,6 +58,7 @@ class PPOAgent:
         # initialize logs
         self.actor_loss_log = [0]
         self.critic_loss_log = [0]
+        self.ratio_log = [0]
 
         # initialize step counter
         self.step_count = 0
@@ -73,8 +70,12 @@ class PPOAgent:
         # get the log probability pi(a|s)
         _, logp, _ = self.actor.pi(state, action)
         
+        # compute V(s) and V(s+1)
+        state_value = self.critic.get_value(state).detach().numpy()
+        next_state_value = self.critic.get_value(next_state).detach().numpy()
+        
         # add data to buffer
-        self.buffer.add(state, action, reward, next_state, done, logp.detach().numpy())
+        self.buffer.add(state, action, reward, next_state, done, state_value, next_state_value, logp.detach().numpy())
 
         # increment counters
         self.step_count += 1
@@ -83,8 +84,8 @@ class PPOAgent:
         # if horizon is reached, learn from experiences
         if self.time_count >= self.horizon:
             
-            # compute advantages
-            self.update_advantages()
+            # compute rewards-to-go and advantages post trajectory
+            self.update_trajectory()
             
             # train actor and critic
             self.learn()
@@ -96,81 +97,80 @@ class PPOAgent:
 
     def learn(self):
         
-        # train
-        for epochs in range(self.epochs):
+        states, actions, rewards, next_states, dones, advantages, _, _, discounted_rewards_to_go, old_logps = self.buffer.get()
+        
+        pi_iters = 50
+        v_iters = 50
+        
+        # train actor in multiple Adam steps
+        for _ in range(pi_iters):
             
-            # create batch indices for training
-            # The idea is to divide the experience data into chunks of size 
-            # equal to batch_size
-            batch_indices = random_batch_indices(self.batch_size, self.horizon)
-
-            for batch_idx in batch_indices:
-                
-                # sample batch from memory
-                states, actions, rewards, next_states, advantages, old_logps = self.buffer.sample(batch_idx, self.device)
-                
-                # ---- TRAIN ACTOR ----
-                
-                # get the new probabilities
-                pi, logps, entropy = self.actor.pi(states, actions)
-               
-                # compute the clipped loss
-                L_clip = clipped_ppo_loss(old_logps, logps, advantages, self.clip_factor)
-                
-                # entropy bonus for exploration
-                L_en = self.entropy_factor * entropy
-                
-                # total loss
-                actor_loss = L_clip + L_en
-                
-                # update policy
-                # TODO: clip gradients after backward pass, before optim step
-                self.actor_optimizer.zero_grad()
-                actor_loss.backward()
-                self.actor_optimizer.step()
-                
-                # ---- TRAIN CRITIC ----
-                
-                # compute td targets
-                state_values = self.critic.get_value(states)
-                next_state_values = self.critic.get_value(next_states)   # need grad here, so no detach
-                targets = compute_td_targets(next_state_values, rewards, self.discount_factor, self.device)
-                
-                # critic loss
-                critic_loss = F.mse_loss(state_values, targets)
+            # get the new policy data, requires_grad is true
+            pi, logps, entropy = self.actor.pi(states, actions)
+            logps = logps.reshape((self.horizon,1))  # reshape logps to batchsize x 1
+           
+            # compute the clipped loss
+            L_clip, ratio = clipped_ppo_loss(old_logps, logps, advantages, self.clip_factor)
+            
+            # entropy bonus for exploration
+            L_en = -self.entropy_factor * entropy
+            
+            # total loss
+            actor_loss = L_clip + L_en
+            
+            # update policy
+            self.actor_optimizer.zero_grad()
+            actor_loss.backward()
+            #torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 1)  # gradient clipping
+            self.actor_optimizer.step()
+            
+            # log the loss
+            self.actor_loss_log.append(actor_loss.detach().cpu().numpy())
+            self.ratio_log.append(ratio.detach().cpu().numpy())
+            
+            
+        # train critic in multiple Adam steps
+        for _ in range(v_iters):
+            
+            # compute current state values V(s), requires_grad is true
+            state_values = self.critic.get_value(states)
+            
+            # critic loss
+            critic_loss = torch.mean((state_values - discounted_rewards_to_go) ** 2)
     
-                # do backward pass and update network
-                # TODO: clip gradients after backward pass, before optim step
-                self.critic_optimizer.zero_grad()
-                critic_loss.backward()
-                self.critic_optimizer.step()
+            # update critic
+            self.critic_optimizer.zero_grad()
+            critic_loss.backward()
+            #torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1)  # gradient clipping
+            self.critic_optimizer.step()
+        
+            # log the loss
+            self.critic_loss_log.append(critic_loss.detach().cpu().numpy())
             
-                # log the losses
-                self.actor_loss_log.append(actor_loss.detach().cpu().numpy())
-                self.critic_loss_log.append(critic_loss.detach().cpu().numpy())
-                
+            
         
-    def update_advantages(self):
+    def update_trajectory(self):
         
-        # convert buffer lists to numpy
         states = self.buffer.states
         next_states = self.buffer.next_states
         rewards = self.buffer.rewards
+        dones = self.buffer.dones
+        state_values = self.buffer.state_values
+        next_state_values = self.buffer.next_state_values
         
-        # compute V(s) and V(s+1)
-        # advantages are not used in critic update, so we can detach
-        state_values = self.critic.get_value(states).detach().numpy()
-        next_state_values = self.critic.get_value(next_states).detach().numpy()
+        # normalize rewards
+        rewards = (rewards - np.mean(rewards)) / (np.std(rewards) + 1e-5)
+        
+        # compute discounted rewards-to-go
+        drtg = discounted_rtg(rewards, self.discount_factor)
         
         # compute advantages
-        adv = advantage_function(rewards, 
-                                 state_values, 
-                                 next_state_values, 
-                                 self.horizon, 
-                                 self.discount_factor, 
-                                 self.gae_factor)
+        adv = gae(rewards, dones, state_values, next_state_values, self.discount_factor, self.gae_factor)
                 
         # normalize advantages
-        adv = (adv - np.mean(adv)) / (np.std(adv) + 1.e-10)
+        adv = (adv - np.mean(adv)) / (np.std(adv) + 1e-5)
         
+        # update buffer
+        self.buffer.rewards = rewards
         self.buffer.advantages = adv
+        self.buffer.drtg = drtg
