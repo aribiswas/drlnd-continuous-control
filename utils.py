@@ -190,7 +190,7 @@ class PPOMemory:
     def reset(self):
         """
         Reset the replay memory items to empty. Usually called after training
-        is performed.
+        is performed. 
 
         """
         self.states = np.empty((self.max_len,self.state_dim))

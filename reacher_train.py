@@ -5,7 +5,7 @@ from agents import PPOAgent
 import numpy as np
 import collections
 
-# PPO hyperparameters
+# PPO hyperparameters 
 HORIZON = 200
 GAMMA = 0.995
 LAMBDA = 0.95

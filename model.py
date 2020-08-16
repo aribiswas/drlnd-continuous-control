@@ -15,7 +15,7 @@ class StochasticActor(nn.Module):
         self.num_obs = num_obs
         self.num_act = num_act
 
-        # layers
+        # layers 
         self.fc1 = nn.Linear(num_obs, 256)
         self.fc2 = nn.Linear(256, 128)
         self.bn1 = nn.BatchNorm1d(256)
