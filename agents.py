@@ -12,12 +12,16 @@ Rev: _
 import numpy as np
 import torch
 import torch.optim as optim
+import torch.nn.functional as F
 from model import StochasticActor, Critic
+from model import DeterministicActor, QCritic
 from utils import PPOMemory, discounted_rtg, gae, clipped_ppo_loss
+from utils import GaussianNoise, ExperienceReplay
 
 class PPOAgent:
     """
     Implementation of actor-critic PPO agent with clipped loss function.
+    
     """
 
     def __init__(self, 
@@ -206,3 +210,153 @@ class PPOAgent:
         self.buffer.rewards = rewards
         self.buffer.advantages = adv
         self.buffer.drtg = drtg
+        
+        
+        
+class DDPGAgent:
+    
+    def __init__(self,
+                 osize,
+                 asize,
+                 seed=0,
+                 buffer_length=int(1e6),
+                 batch_size=256,
+                 gamma=0.99,
+                 tau=0.01,
+                 actor_LR=1e-3,
+                 critic_LR=1e-3):
+        
+        # parameters
+        self.gamma = gamma
+        self.batch_size = batch_size
+        self.step_count = 0
+        self.tau = tau
+        self.actor_LR = actor_LR
+        self.critic_LR = critic_LR
+        
+        # initialize actor
+        self.actor = DeterministicActor(osize, asize, seed)
+        self.target_actor = DeterministicActor(osize, asize, seed)
+        self.target_actor.load_state_dict(self.actor.state_dict())
+        
+        # initialize critic
+        self.critic = QCritic(osize, asize, seed)
+        self.target_critic = QCritic(osize, asize, seed)
+        self.target_critic.load_state_dict(self.critic.state_dict())
+        
+        # create optimizers
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=self.actor_LR)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=self.critic_LR)
+        
+        # Experience replay
+        self.buffer = ExperienceReplay(asize, buffer_length, batch_size, seed)
+        
+        # Noise model
+        self.noise_model = GaussianNoise(asize, mean=0, std=0.1, stdmin=0.01, decay=1e-6)
+        
+        # initialize logs
+        self.actor_loss_log = [0]
+        self.critic_loss_log = [0]
+        
+    
+    def get_action(self, state, train=False):
+        
+        with torch.no_grad():
+            action = self.actor.mu(state).numpy()
+            
+        if train:
+            noise = self.noise_model.step()
+            action += noise
+        action = np.clip(action, -1, 1)
+        
+        return action
+        
+    
+    def step(self, state, action, reward, next_state, done):
+        
+        # add experience to replay
+        self.buffer.add(state,action,reward,next_state,done)
+        
+        # learn from experiences
+        if self.buffer.__len__() > self.batch_size:
+            
+            # create mini batch for learning
+            experiences = self.buffer.sample()
+            
+            # train the agent
+            self.learn(experiences)
+        
+        # increase step count
+        self.step_count += 1
+    
+    
+    def learn(self, experiences):
+        
+        # unpack experience
+        states, actions, rewards, next_states, dones = experiences
+        
+        # compute td targets and local Q values
+        target_action = self.target_actor.mu(next_states).detach()
+        targetQ = self.target_critic.Q(next_states,target_action).detach()
+        y = rewards + self.gamma * targetQ * (1-dones)
+        Q = self.critic.Q(states, actions)
+        
+        # critic loss
+        critic_loss = F.mse_loss(Q,y)
+
+        # update critic
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1)  # gradient clipping
+        self.critic_optimizer.step()
+        
+        # actor loss
+        J = Q.detach() * self.actor.mu(states)
+        actor_loss = -J.mean()
+        
+        # update actor
+        self.actor_optimizer.zero_grad()
+        actor_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 1)  # gradient clipping
+        self.actor_optimizer.step()
+        
+        # log the loss
+        self.actor_loss_log.append(actor_loss.detach().cpu().numpy())
+        self.critic_loss_log.append(critic_loss.detach().cpu().numpy())
+        
+        # soft update target actor and critic
+        for target_params, params in zip(self.target_actor.parameters(), self.actor.parameters()):
+            target_params.data.copy_(self.tau*params + (1-self.tau)*target_params.data)
+        for target_params, params in zip(self.target_critic.parameters(), self.critic.parameters()):
+            target_params.data.copy_(self.tau*params + (1-self.tau)*target_params.data)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    

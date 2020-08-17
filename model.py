@@ -75,11 +75,50 @@ class StochasticActor(nn.Module):
         
         return dist, logp, entropy
     
+
+class DeterministicActor(nn.Module):
     
+    def __init__(self, num_obs, num_act, seed=0):
+        
+        torch.manual_seed(seed)
+
+        super(DeterministicActor, self).__init__()
+
+        self.num_obs = num_obs
+
+        # layers
+        self.fc1 = nn.Linear(num_obs,256)
+        self.fc2 = nn.Linear(256,128)
+        self.fc3 = nn.Linear(128,num_act)
+
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        
+        
+    def forward(self, state):
+        
+        # convert to torch
+        if isinstance(state, numpy.ndarray):
+            x = torch.from_numpy(state).float().to(self.device)
+        elif isinstance(state, torch.Tensor):
+            x = state
+        else:
+            raise TypeError("Input must be a numpy array or torch Tensor.")
+            
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)  
+        return x
+        
+        
+    def mu(self, state):
+        
+        return self.forward(state)
+
+
 
 class Critic(nn.Module):
 
-    def __init__(self, num_obs, seed):
+    def __init__(self, num_obs, seed=0):
         
         torch.manual_seed(seed)
 
@@ -115,4 +154,69 @@ class Critic(nn.Module):
     def get_value(self, state):
         
         return self.forward(state)
+    
+
+class QCritic(nn.Module):
+
+    def __init__(self, num_obs, num_act, seed=0):
+        
+        torch.manual_seed(seed)
+
+        super(QCritic, self).__init__()
+
+        self.num_obs = num_obs
+
+        # ------ layers ------
+        
+        # state path
+        self.sfc1 = nn.Linear(num_obs,256)
+        self.sfc2 = nn.Linear(256,128)
+        
+        # action path
+        self.afc1 = nn.Linear(num_act,256)
+        self.afc2 = nn.Linear(256,128)
+        
+        # common path
+        self.cfc1 = nn.Linear(128,64)
+        self.cfc2 = nn.Linear(64,1)
+
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        
+
+    def forward(self, state, action):
+        
+        # convert to torch
+        if isinstance(state, numpy.ndarray):
+            x = torch.from_numpy(state).float().to(self.device)
+        elif isinstance(state, torch.Tensor):
+            x = state
+        else:
+            raise TypeError("Input must be a numpy array or torch Tensor.")
+            
+        if isinstance(action, numpy.ndarray):
+            a = torch.from_numpy(action).float().to(self.device)
+        elif isinstance(action, torch.Tensor):
+            a = action
+        else:
+            raise TypeError("Input must be a numpy array or torch Tensor.")
+
+        # state path
+        xs = F.relu(self.sfc1(x))
+        xs = F.relu(self.sfc2(xs))
+        
+        # action path
+        xa = F.relu(self.afc1(a))
+        xa = F.relu(self.afc2(xa))
+        
+        # common path
+        xc = xs + xa
+        xc = F.relu(self.cfc1(xc))
+        xc = self.cfc2(xc)
+
+        return xc
+
+
+    def Q(self, state, action):
+        
+        return self.forward(state, action)
 
