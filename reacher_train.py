@@ -8,15 +8,16 @@ import collections
 
 # PPO hyperparameters 
 HORIZON = 1001
-GAMMA = 0.995
+BATCH_SIZE = 256
+GAMMA = 0.9995
 LAMBDA = 0.95
 ALPHA_CRITIC = 1e-3
-ALPHA_ACTOR = 1e-4
+ALPHA_ACTOR = 1e-3
 CLIP_FACTOR = 0.2
 ENTROPY_FACTOR = 0.01
 
 # training options
-MAX_EPISODES = 1000      # Maximum number of training episodes
+MAX_EPISODES = 500      # Maximum number of training episodes
 AVG_WINDOW = 100         # Window length for calculating score averages
 
 # create environment
@@ -36,7 +37,8 @@ asize = 4
 # create PPO agent
 agent = PPOAgent(osize, 
                  asize, 
-                 horizon=HORIZON, 
+                 horizon=HORIZON,
+                 batch_size=BATCH_SIZE,
                  discount_factor=GAMMA, 
                  gae_factor=LAMBDA, 
                  actor_LR=ALPHA_ACTOR,
@@ -86,7 +88,7 @@ for ep_count in range(1,MAX_EPISODES):
     avg_reward = np.mean(avg_window)
     avg_log.append(avg_reward)
     reward_log.append(ep_reward)
-    if VERBOSE and (ep_count==1 or ep_count%10==0):
+    if VERBOSE and (ep_count==1 or ep_count%1==0):
         print('Episode: {:4d} \tAverage Reward: {:4.2f} \tActor Loss: {:8.4f} \tPPO Ratio: {:6.4f} \tCritic Loss: {:8.4f}'.format(ep_count,avg_reward,agent.actor_loss_log[-1],agent.ratio_log[-1],agent.critic_loss_log[-1]))
         
     # check if env is solved

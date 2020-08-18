@@ -28,6 +28,7 @@ class PPOAgent:
                  osize, 
                  asize,
                  horizon=256,
+                 batch_size=64,
                  discount_factor=0.99,
                  gae_factor=0.95,
                  actor_LR=0.001,
@@ -36,6 +37,7 @@ class PPOAgent:
                  entropy_factor=0.01):
         
         self.horizon = horizon
+        self.batch_size = batch_size
         self.discount_factor = discount_factor
         self.gae_factor = gae_factor
         self.clip_factor = clip_factor
@@ -43,16 +45,12 @@ class PPOAgent:
         self.critic_LR = critic_LR
         self.entropy_factor = entropy_factor
         
-        # create actor and critic neural networks
-        actor = StochasticActor(osize, asize, seed=0)
-        critic = Critic(osize, seed=0)
-
         # set the device
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
-        # create actor and critic representations
-        self.actor = actor.to(self.device)
-        self.critic = critic.to(self.device)
+   
+        # create actor and critic neural networks
+        self.actor = StochasticActor(osize, asize, seed=0).to(self.device)
+        self.critic = Critic(osize, seed=0).to(self.device)
 
         # initialize a buffer for storing experiences
         self.buffer = PPOMemory(state_dim=self.actor.num_obs, 
@@ -133,17 +131,18 @@ class PPOAgent:
 
     def learn(self):
         
-        states, actions, rewards, next_states, dones, advantages, _, _, discounted_rewards_to_go, old_logps = self.buffer.get()
-        
         pi_iters = 50
         v_iters = 50
         
         # train actor in multiple Adam steps
         for _ in range(pi_iters):
             
+            batch_idxs = np.random.choice(self.batch_size, self.batch_size)
+            states, actions, rewards, next_states, dones, advantages, _, _, discounted_rewards_to_go, old_logps = self.buffer.sample(batch_idxs)
+            
             # get the new policy data, requires_grad is true
             pi, logps, entropy = self.actor.pi(states, actions)
-            logps = logps.reshape((self.horizon,1))  # reshape logps to batchsize x 1
+            logps = logps.reshape((self.batch_size,1))  # reshape logps to batchsize x 1
            
             # compute the clipped loss
             L_clip, ratio = clipped_ppo_loss(old_logps, logps, advantages, self.clip_factor)
@@ -167,6 +166,10 @@ class PPOAgent:
             
         # train critic in multiple Adam steps
         for _ in range(v_iters):
+            
+            batch_idxs = np.random.choice(self.batch_size, self.batch_size)
+            states, actions, rewards, next_states, dones, advantages, _, _, discounted_rewards_to_go, old_logps = self.buffer.sample(batch_idxs)
+            
             
             # compute current state values V(s), requires_grad is true
             state_values = self.critic.get_value(states)
@@ -223,6 +226,7 @@ class DDPGAgent:
                  batch_size=256,
                  gamma=0.99,
                  tau=0.01,
+                 update_freq=3,
                  actor_LR=1e-3,
                  critic_LR=1e-3):
         
@@ -233,14 +237,17 @@ class DDPGAgent:
         self.tau = tau
         self.actor_LR = actor_LR
         self.critic_LR = critic_LR
+        self.update_freq = update_freq
+        
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         
         # initialize actor
-        self.actor = DeterministicActor(osize, asize, seed)
+        self.actor = DeterministicActor(osize, asize, seed).to(self.device)
         self.target_actor = DeterministicActor(osize, asize, seed)
         self.target_actor.load_state_dict(self.actor.state_dict())
         
         # initialize critic
-        self.critic = QCritic(osize, asize, seed)
+        self.critic = QCritic(osize, asize, seed).to(self.device)
         self.target_critic = QCritic(osize, asize, seed)
         self.target_critic.load_state_dict(self.critic.state_dict())
         
@@ -277,6 +284,9 @@ class DDPGAgent:
         # add experience to replay
         self.buffer.add(state,action,reward,next_state,done)
         
+        # increase step count
+        self.step_count += 1
+        
         # learn from experiences
         if self.buffer.__len__() > self.batch_size:
             
@@ -285,9 +295,6 @@ class DDPGAgent:
             
             # train the agent
             self.learn(experiences)
-        
-        # increase step count
-        self.step_count += 1
     
     
     def learn(self, experiences):
@@ -295,10 +302,16 @@ class DDPGAgent:
         # unpack experience
         states, actions, rewards, next_states, dones = experiences
         
-        # compute td targets and local Q values
-        target_action = self.target_actor.mu(next_states).detach()
-        targetQ = self.target_critic.Q(next_states,target_action).detach()
-        y = rewards + self.gamma * targetQ * (1-dones)
+        # normalize rewards
+        rewards = (rewards - np.mean(self.buffer.rew_buf)) / (np.std(self.buffer.rew_buf) + 1e-5)
+        
+        # compute td targets
+        with torch.no_grad():
+            target_action = self.target_actor.mu(next_states)
+            targetQ = self.target_critic.Q(next_states,target_action)
+            y = rewards + self.gamma * targetQ * (1-dones)
+        
+        # compute local Q values
         Q = self.critic.Q(states, actions)
         
         # critic loss
@@ -310,9 +323,12 @@ class DDPGAgent:
         torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1)  # gradient clipping
         self.critic_optimizer.step()
         
+        # freeze critic before policy loss computation
+        for p in self.critic.parameters():
+            p.requires_grad = False
+        
         # actor loss
-        J = Q.detach() * self.actor.mu(states)
-        actor_loss = -J.mean()
+        actor_loss = -self.critic.Q(states, self.actor.mu(states)).mean()
         
         # update actor
         self.actor_optimizer.zero_grad()
@@ -320,15 +336,26 @@ class DDPGAgent:
         torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 1)  # gradient clipping
         self.actor_optimizer.step()
         
+        # Unfreeze critic
+        for p in self.critic.parameters():
+            p.requires_grad = True
+            
         # log the loss
         self.actor_loss_log.append(actor_loss.detach().cpu().numpy())
         self.critic_loss_log.append(critic_loss.detach().cpu().numpy())
         
         # soft update target actor and critic
-        for target_params, params in zip(self.target_actor.parameters(), self.actor.parameters()):
-            target_params.data.copy_(self.tau*params + (1-self.tau)*target_params.data)
-        for target_params, params in zip(self.target_critic.parameters(), self.critic.parameters()):
-            target_params.data.copy_(self.tau*params + (1-self.tau)*target_params.data)
+        if self.step_count % self.update_freq == 0:
+            self.soft_update(self.target_actor, self.actor)
+            self.soft_update(self.target_critic, self.critic)
+            
+            
+    
+    def soft_update(self, target_model, model):
+        with torch.no_grad():
+            for target_params, params in zip(target_model.parameters(), model.parameters()):
+                target_params.data.copy_(self.tau*params + (1-self.tau)*target_params.data)
+    
     
     
     

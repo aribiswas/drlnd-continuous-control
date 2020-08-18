@@ -293,6 +293,7 @@ class ExperienceReplay:
         self.batch_size = batch_size
         self.experience = namedtuple("Experience", field_names=["state", "action", "reward", "next_state", "done"])
         self.seed = random.seed(seed)
+        self.rew_buf = []
         
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     
@@ -301,6 +302,7 @@ class ExperienceReplay:
         
         e = self.experience(state, action, reward, next_state, done)
         self.memory.append(e)
+        self.rew_buf.append(reward)
     
     def sample(self):
         """Randomly sample a batch of experiences from memory."""

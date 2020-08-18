@@ -75,6 +75,7 @@ class StochasticActor(nn.Module):
         
         return dist, logp, entropy
     
+    
 
 class DeterministicActor(nn.Module):
     
@@ -177,12 +178,10 @@ class QCritic(nn.Module):
         self.afc2 = nn.Linear(256,128)
         
         # common path
-        self.cfc1 = nn.Linear(128,64)
+        self.cfc1 = nn.Linear(128*2,64)
         self.cfc2 = nn.Linear(64,1)
 
-        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         
-
     def forward(self, state, action):
         
         # convert to torch
@@ -209,7 +208,7 @@ class QCritic(nn.Module):
         xa = F.relu(self.afc2(xa))
         
         # common path
-        xc = xs + xa
+        xc = torch.cat((xs,xa), dim=1)
         xc = F.relu(self.cfc1(xc))
         xc = self.cfc2(xc)
 
