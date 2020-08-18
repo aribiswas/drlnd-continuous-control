@@ -2,20 +2,21 @@
 
 from unityagents import UnityEnvironment
 from agents import PPOAgent
+from matplotlib import pyplot as plt
 import numpy as np
 import collections
 
 # PPO hyperparameters 
-HORIZON = 256
+HORIZON = 1001
 GAMMA = 0.995
 LAMBDA = 0.95
-ALPHA_CRITIC = 1e-2
-ALPHA_ACTOR = 1e-2
+ALPHA_CRITIC = 1e-3
+ALPHA_ACTOR = 1e-4
 CLIP_FACTOR = 0.2
-ENTROPY_FACTOR = 0.02
+ENTROPY_FACTOR = 0.01
 
 # training options
-MAX_EPISODES = 5000      # Maximum number of training episodes
+MAX_EPISODES = 1000      # Maximum number of training episodes
 AVG_WINDOW = 100         # Window length for calculating score averages
 
 # create environment
@@ -99,7 +100,7 @@ env.close()
 
 # plot score history
 plt.ion()
-fig, axarr = plt.subplots(2,1, figsize=(4,4), dpi=200)
+fig, axarr = plt.subplots(3,1, figsize=(4,4), dpi=200)
 ax1 = axarr[0]
 ax1.set_title("Training Results")
 ax1.set_xlabel("Episodes")
@@ -109,8 +110,13 @@ ax1.plot(avg_log)
 # plot loss
 ax2 = axarr[1]
 ax2.set_xlabel("Steps")
-ax2.set_ylabel("Loss")
-ax2.plot(actor_loss_log)
+ax2.set_ylabel("Actor Loss")
+ax2.plot(agent.actor_loss_log)
+
+ax3 = axarr[2]
+ax3.set_xlabel("Steps")
+ax3.set_ylabel("Critic Loss")
+ax3.plot(agent.critic_loss_log)
 
 fig.tight_layout(pad=1.0)
 plt.show()
