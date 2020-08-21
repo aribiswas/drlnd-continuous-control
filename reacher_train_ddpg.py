@@ -2,24 +2,26 @@
 
 from unityagents import UnityEnvironment
 from agents import DDPGAgent
+from matplotlib import pyplot as plt
 import numpy as np
 import collections
+import torch
 
 # DDPG hyperparameters
-BUFFER_LENGTH = int(1e6) 
-BATCH_SIZE = 256
+BUFFER_LENGTH = int(1e6)
+BATCH_SIZE = 128
 GAMMA = 0.99
 ALPHA_CRITIC = 1e-3
-ALPHA_ACTOR = 2e-4
-TAU = 0.01
-UPDATE_FREQ = 5000
+ALPHA_ACTOR = 1e-4
+TAU = 0.001
+UPDATE_FREQ = 10
 
 # training options
-MAX_EPISODES = 5000      # Maximum number of training episodes
+MAX_EPISODES = 500      # Maximum number of training episodes
 AVG_WINDOW = 100         # Window length for calculating score averages
 
 # create environment
-env = UnityEnvironment(file_name='Reacher.app')
+env = UnityEnvironment(file_name='Reacher20.app')
 
 # get the default brain
 brain_name = env.brain_names[0]
@@ -57,37 +59,40 @@ for ep_count in range(1,MAX_EPISODES):
 
     # reset the environment
     env_info = env.reset(train_mode=True)[brain_name]
-    state = env_info.vector_observations[0]
+    states = env_info.vector_observations
     
     ep_reward = 0
     
     while True:
         # sample action from the current policy
-        action = agent.get_action(state, train=True)
+        actions = agent.get_action(states, train=True)
         
         # step the environment
-        env_info = env.step(action)[brain_name]
-        next_state = env_info.vector_observations[0]
-        reward = env_info.rewards[0] 
-        done = env_info.local_done[0]
+        env_info = env.step(actions)[brain_name]
+        next_states = env_info.vector_observations
+        rewards = env_info.rewards 
+        dones = env_info.local_done
         
         # step the agent
-        agent.step(state,action,reward,next_state,done)
+        agent.step(states,actions,rewards,next_states,dones)
         
-        state = next_state
-        ep_reward += reward
+        states = next_states
+        ep_reward += np.sum(rewards)
         
         # terminate if done
-        if done:
+        if np.any(dones):
             break
+    
+    # scale episode reward
+    ep_reward/= 20
     
     # print training progress
     avg_window.append(ep_reward)
     avg_reward = np.mean(avg_window)
     avg_log.append(avg_reward)
     reward_log.append(ep_reward)
-    if VERBOSE and (ep_count==1 or ep_count%1==0):
-        print('Episode: {:4d} \tAverage Reward: {:4.2f} \tActor Loss: {:8.4f} \tCritic Loss: {:8.4f}'.format(ep_count,avg_reward,agent.actor_loss_log[-1],agent.critic_loss_log[-1]))
+    if VERBOSE and (ep_count==1 or ep_count%50==0):
+        print('Episode: {:4d} \tAverage Reward: {:4.2f} \tActor Loss: {:8.4f} \tCritic Loss: {:8.4f} \tNoise: {:6.4f}'.format(ep_count,avg_reward,agent.actor_loss_log[-1],agent.critic_loss_log[-1],agent.noise_log[-1]))
         
     # check if env is solved
     if avg_reward >= 30:

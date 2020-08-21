@@ -16,7 +16,7 @@ import torch.nn.functional as F
 from model import StochasticActor, Critic
 from model import DeterministicActor, QCritic
 from utils import PPOMemory, discounted_rtg, gae, clipped_ppo_loss
-from utils import GaussianNoise, ExperienceReplay
+from utils import GaussianNoise, OUNoise, ExperienceBuffer
 
 class PPOAgent:
     """
@@ -101,15 +101,18 @@ class PPOAgent:
 
     def step(self, state, action, reward, next_state, done):
         
-        # get the log probability pi(a|s)
-        _, logp, _ = self.actor.pi(state, action)
-        
-        # compute V(s) and V(s+1)
-        state_value = self.critic.get_value(state).detach().numpy()
-        next_state_value = self.critic.get_value(next_state).detach().numpy()
+        with torch.no_grad():
+            
+            # get the log probability pi(a|s)
+            _, logp, _ = self.actor.pi(state, action)
+            logp = logp.numpy()
+            
+            # compute V(s) and V(s+1)
+            state_value = self.critic.get_value(state).numpy()
+            next_state_value = self.critic.get_value(next_state).numpy()
         
         # add data to buffer
-        self.buffer.add(state, action, reward, next_state, done, state_value, next_state_value, logp.detach().numpy())
+        self.buffer.add(state, action, reward, next_state, done, state_value, next_state_value, logp)
 
         # increment counters
         self.step_count += 1
@@ -118,7 +121,7 @@ class PPOAgent:
         # if horizon is reached, learn from experiences
         if self.time_count >= self.horizon:
             
-            # compute rewards-to-go and advantages post trajectory
+            # compute rewards-to-go and advantages post trajectory completion
             self.update_trajectory()
             
             # train actor and critic
@@ -131,12 +134,13 @@ class PPOAgent:
 
     def learn(self):
         
-        pi_iters = 50
-        v_iters = 50
+        pi_iters = 50  # number of actor adam steps
+        v_iters = 50   # number of critic adam steps
         
         # train actor in multiple Adam steps
         for _ in range(pi_iters):
             
+            # randomly sample batch of experiences
             batch_idxs = np.random.choice(self.batch_size, self.batch_size)
             states, actions, rewards, next_states, dones, advantages, _, _, discounted_rewards_to_go, old_logps = self.buffer.sample(batch_idxs)
             
@@ -156,7 +160,7 @@ class PPOAgent:
             # update policy
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
-            #torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 1)  # gradient clipping
+            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 1)  # gradient clipping
             self.actor_optimizer.step()
             
             # log the loss
@@ -180,12 +184,11 @@ class PPOAgent:
             # update critic
             self.critic_optimizer.zero_grad()
             critic_loss.backward()
-            #torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1)  # gradient clipping
+            torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1)  # gradient clipping
             self.critic_optimizer.step()
         
             # log the loss
             self.critic_loss_log.append(critic_loss.detach().cpu().numpy())
-            
             
         
     def update_trajectory(self):
@@ -198,7 +201,7 @@ class PPOAgent:
         next_state_values = self.buffer.next_state_values
         
         # normalize rewards
-        rewards = (rewards - np.mean(rewards)) / (np.std(rewards) + 1e-5)
+        #rewards = (rewards - np.mean(rewards)) / (np.std(rewards) + 1e-5)
         
         # compute discounted rewards-to-go
         drtg = discounted_rtg(rewards, self.discount_factor)
@@ -207,7 +210,7 @@ class PPOAgent:
         adv = gae(rewards, dones, state_values, next_state_values, self.discount_factor, self.gae_factor)
                 
         # normalize advantages
-        adv = (adv - np.mean(adv)) / (np.std(adv) + 1e-5)
+        #adv = (adv - np.mean(adv)) / (np.std(adv) + 1e-5)
         
         # update buffer
         self.buffer.rewards = rewards
@@ -256,14 +259,16 @@ class DDPGAgent:
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=self.critic_LR)
         
         # Experience replay
-        self.buffer = ExperienceReplay(asize, buffer_length, batch_size, seed)
+        self.buffer = ExperienceBuffer(osize, asize, buffer_length)
         
         # Noise model
-        self.noise_model = GaussianNoise(asize, mean=0, std=0.1, stdmin=0.01, decay=1e-6)
+        #self.noise_model = GaussianNoise(asize, mean=0, std=0.5, stdmin=0.01, decay=5e-6)
+        self.noise_model = OUNoise(size=[20,4], mean=0, mac=0.2, var=0.05, varmin=0.001, decay=5e-6, seed=0)
         
         # initialize logs
         self.actor_loss_log = [0]
         self.critic_loss_log = [0]
+        self.noise_log = [0]
         
     
     def get_action(self, state, train=False):
@@ -274,6 +279,7 @@ class DDPGAgent:
         if train:
             noise = self.noise_model.step()
             action += noise
+            
         action = np.clip(action, -1, 1)
         
         return action
@@ -282,7 +288,7 @@ class DDPGAgent:
     def step(self, state, action, reward, next_state, done):
         
         # add experience to replay
-        self.buffer.add(state,action,reward,next_state,done)
+        self.buffer.add(state, action, reward, next_state, done)
         
         # increase step count
         self.step_count += 1
@@ -291,10 +297,11 @@ class DDPGAgent:
         if self.buffer.__len__() > self.batch_size:
             
             # create mini batch for learning
-            experiences = self.buffer.sample()
+            experiences = self.buffer.sample(self.batch_size)
             
             # train the agent
             self.learn(experiences)
+            
     
     
     def learn(self, experiences):
@@ -303,7 +310,7 @@ class DDPGAgent:
         states, actions, rewards, next_states, dones = experiences
         
         # normalize rewards
-        rewards = (rewards - np.mean(self.buffer.rew_buf)) / (np.std(self.buffer.rew_buf) + 1e-5)
+        #rewards = (rewards - np.mean(self.buffer.rew_buf)) / (np.std(self.buffer.rew_buf) + 1e-5)
         
         # compute td targets
         with torch.no_grad():
@@ -315,7 +322,7 @@ class DDPGAgent:
         Q = self.critic.Q(states, actions)
         
         # critic loss
-        critic_loss = F.mse_loss(Q,y)
+        critic_loss = torch.mean((y-Q)**2)
 
         # update critic
         self.critic_optimizer.zero_grad()
@@ -340,9 +347,10 @@ class DDPGAgent:
         for p in self.critic.parameters():
             p.requires_grad = True
             
-        # log the loss
+        # log the loss and noise
         self.actor_loss_log.append(actor_loss.detach().cpu().numpy())
         self.critic_loss_log.append(critic_loss.detach().cpu().numpy())
+        self.noise_log.append(np.mean(self.noise_model.x))
         
         # soft update target actor and critic
         if self.step_count % self.update_freq == 0:

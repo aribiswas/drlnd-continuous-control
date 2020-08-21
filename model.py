@@ -6,7 +6,7 @@ from torch.distributions import Normal
 
 class StochasticActor(nn.Module):
 
-    def __init__(self, num_obs, num_act, seed):
+    def __init__(self, num_obs, num_act, seed=0):
         
         torch.manual_seed(seed)
 
@@ -34,6 +34,8 @@ class StochasticActor(nn.Module):
         meanx = F.relu(self.meanfc1(x))
         meanx = self.tanh(self.meanfc2(meanx))
         
+        # constant logstdx
+        # TODO: output varying logstdx from network
         logstdx = 0.5 * torch.ones(self.num_act).float().to(self.device)
 
         return meanx, logstdx
@@ -71,51 +73,10 @@ class StochasticActor(nn.Module):
                 raise TypeError("Action input must be a numpy array or torch Tensor.")
             
             # take the log prob of all actions and sum them
-            logp = dist.log_prob(act).sum(-1)
+            logp = torch.sum(dist.log_prob(act), dim=-1)
         
         return dist, logp, entropy
     
-    
-
-class DeterministicActor(nn.Module):
-    
-    def __init__(self, num_obs, num_act, seed=0):
-        
-        torch.manual_seed(seed)
-
-        super(DeterministicActor, self).__init__()
-
-        self.num_obs = num_obs
-
-        # layers
-        self.fc1 = nn.Linear(num_obs,256)
-        self.fc2 = nn.Linear(256,128)
-        self.fc3 = nn.Linear(128,num_act)
-
-        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        
-        
-    def forward(self, state):
-        
-        # convert to torch
-        if isinstance(state, numpy.ndarray):
-            x = torch.from_numpy(state).float().to(self.device)
-        elif isinstance(state, torch.Tensor):
-            x = state
-        else:
-            raise TypeError("Input must be a numpy array or torch Tensor.")
-            
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)  
-        return x
-        
-        
-    def mu(self, state):
-        
-        return self.forward(state)
-
-
 
 class Critic(nn.Module):
 
@@ -157,6 +118,51 @@ class Critic(nn.Module):
         return self.forward(state)
     
 
+
+
+# ======== For DDPG Agent =========
+
+
+class DeterministicActor(nn.Module):
+    
+    def __init__(self, num_obs, num_act, seed=0):
+        
+        torch.manual_seed(seed)
+
+        super(DeterministicActor, self).__init__()
+
+        self.num_obs = num_obs
+
+        # layers
+        self.fc1 = nn.Linear(num_obs,64)
+        self.fc2 = nn.Linear(64,32)
+        self.fc3 = nn.Linear(32,num_act)
+        self.tanh = nn.Tanh()
+
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        
+        
+    def forward(self, state):
+        
+        # convert to torch
+        if isinstance(state, numpy.ndarray):
+            x = torch.from_numpy(state).float().to(self.device)
+        elif isinstance(state, torch.Tensor):
+            x = state
+        else:
+            raise TypeError("Input must be a numpy array or torch Tensor.")
+        
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.tanh(self.fc3(x))
+        return x
+        
+        
+    def mu(self, state):
+        
+        return torch.clamp(self.forward(state), -1, 1)
+    
+
 class QCritic(nn.Module):
 
     def __init__(self, num_obs, num_act, seed=0):
@@ -170,15 +176,15 @@ class QCritic(nn.Module):
         # ------ layers ------
         
         # state path
-        self.sfc1 = nn.Linear(num_obs,256)
-        self.sfc2 = nn.Linear(256,128)
+        self.sfc1 = nn.Linear(num_obs,64)
+        self.sfc2 = nn.Linear(64,64)
         
         # action path
-        self.afc1 = nn.Linear(num_act,256)
-        self.afc2 = nn.Linear(256,128)
+        self.afc1 = nn.Linear(num_act,64)
+        self.afc2 = nn.Linear(64,64)
         
         # common path
-        self.cfc1 = nn.Linear(128*2,64)
+        self.cfc1 = nn.Linear(64*2,64)
         self.cfc2 = nn.Linear(64,1)
 
         
@@ -186,9 +192,9 @@ class QCritic(nn.Module):
         
         # convert to torch
         if isinstance(state, numpy.ndarray):
-            x = torch.from_numpy(state).float().to(self.device)
+            s = torch.from_numpy(state).float().to(self.device)
         elif isinstance(state, torch.Tensor):
-            x = state
+            s = state
         else:
             raise TypeError("Input must be a numpy array or torch Tensor.")
             
@@ -200,7 +206,7 @@ class QCritic(nn.Module):
             raise TypeError("Input must be a numpy array or torch Tensor.")
 
         # state path
-        xs = F.relu(self.sfc1(x))
+        xs = F.relu(self.sfc1(s))
         xs = F.relu(self.sfc2(xs))
         
         # action path
