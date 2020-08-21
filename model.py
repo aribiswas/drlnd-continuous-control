@@ -4,6 +4,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Normal
 
+"""
+Actor class representing a stochastic policy pi(a|s). 
+
+"""
 class StochasticActor(nn.Module):
 
     def __init__(self, num_obs, num_act, seed=0):
@@ -16,10 +20,9 @@ class StochasticActor(nn.Module):
         self.num_act = num_act
 
         # layers 
-        self.fc1 = nn.Linear(num_obs, 256)
-        self.fc2 = nn.Linear(256, 128)
-        self.bn1 = nn.BatchNorm1d(256)
-        self.meanfc1 = nn.Linear(128, 64)
+        self.fc1 = nn.Linear(num_obs, 64)
+        self.fc2 = nn.Linear(64, 64)
+        self.meanfc1 = nn.Linear(64, 64)
         self.meanfc2 = nn.Linear(64, num_act)
         self.tanh = nn.Tanh()
 
@@ -78,6 +81,11 @@ class StochasticActor(nn.Module):
         return dist, logp, entropy
     
 
+
+"""
+Critic class for approximating the state value function V(s).
+
+"""
 class Critic(nn.Module):
 
     def __init__(self, num_obs, seed=0):
@@ -89,9 +97,9 @@ class Critic(nn.Module):
         self.num_obs = num_obs
 
         # layers
-        self.fc1 = nn.Linear(num_obs,256)
-        self.fc2 = nn.Linear(256,128)
-        self.fc3 = nn.Linear(128,1)
+        self.fc1 = nn.Linear(num_obs,64)
+        self.fc2 = nn.Linear(64,64)
+        self.fc3 = nn.Linear(64,1)
 
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         
@@ -123,6 +131,10 @@ class Critic(nn.Module):
 # ======== For DDPG Agent =========
 
 
+"""
+Actor class representing a deterministic policy mu(s). 
+
+"""
 class DeterministicActor(nn.Module):
     
     def __init__(self, num_obs, num_act, seed=0):
@@ -143,6 +155,10 @@ class DeterministicActor(nn.Module):
         
         
     def forward(self, state):
+        """
+        Perform forward pass through the network.
+        
+        """
         
         # convert to torch
         if isinstance(state, numpy.ndarray):
@@ -159,10 +175,18 @@ class DeterministicActor(nn.Module):
         
         
     def mu(self, state):
+        """
+        Get the deterministic policy.
+
+        """
         
         return torch.clamp(self.forward(state), -1, 1)
     
 
+"""
+Critic class for approximating the state-action value function Q(s,a). 
+
+"""
 class QCritic(nn.Module):
 
     def __init__(self, num_obs, num_act, seed=0):
@@ -189,6 +213,10 @@ class QCritic(nn.Module):
 
         
     def forward(self, state, action):
+        """
+        Perform forward pass through the network.
+        
+        """
         
         # convert to torch
         if isinstance(state, numpy.ndarray):
@@ -222,6 +250,10 @@ class QCritic(nn.Module):
 
 
     def Q(self, state, action):
+        """
+        Compute Q(s,a)
+
+        """
         
         return self.forward(state, action)
 
