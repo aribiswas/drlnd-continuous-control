@@ -33,10 +33,6 @@ class DeterministicActor(nn.Module):
         
         
     def forward(self, state):
-        """
-        Perform forward pass through the network.
-        
-        """
         
         # convert to torch
         if isinstance(state, numpy.ndarray):
@@ -53,10 +49,6 @@ class DeterministicActor(nn.Module):
         
         
     def mu(self, state):
-        """
-        Get the deterministic policy.
-
-        """
         
         return torch.clamp(self.forward(state), -1, 1)
         
@@ -70,27 +62,7 @@ During training, the agent explores the action space by introducing random explo
 class OUNoise:
     
     def __init__(self, size, mean=0, mac=0.15, var=0.1, varmin=0.01, decay=1e-6, seed=0):
-        """
-        Initialize Ornstein-Uhlenbech action noise.
-
-        Parameters
-        ----------
-        size : list or numpy array
-            Dimensions of the noise [a,b] where a is the batch size and b is the number of actions
-        mean : number, optional
-            Mean of the OU noise. The default is 0.
-        mac : number, optional
-            Mena attraction constant. The default is 0.15.
-        var : number, optional
-            Variance. The default is 0.1.
-        varmin : TYPE, optional
-            Minimum variance. The default is 0.01.
-        decay : number, optional
-            Decay rate of variance. The default is 1e-6.
-        seed : number, optional
-            Seed. The default is 0.
-
-        """
+    
         np.random.seed(seed)
         self.mean = mean * np.ones(size)
         self.mac = mac
@@ -102,15 +74,7 @@ class OUNoise:
         self.step_count = 0
         
     def step(self):
-        """
-        Step the OU noise model by computing the noise and decaying variance.
-
-        Returns
-        -------
-        noise : numpy array
-            OU action noise.
-
-        """
+    
         r = self.x.shape[0]
         c = self.x.shape[1]
         self.x = self.xprev + self.mac * (self.mean - self.xprev) + self.var * np.random.randn(r,c)
@@ -153,10 +117,6 @@ class QCritic(nn.Module):
 
         
     def forward(self, state, action):
-        """
-        Perform forward pass through the network.
-        
-        """
         
         # convert to torch
         if isinstance(state, numpy.ndarray):
@@ -190,19 +150,16 @@ class QCritic(nn.Module):
 
 
     def Q(self, state, action):
-        """
-        Compute Q(s,a)
-
-        """
         
         return self.forward(state, action)
+        
 </code></pre>
 
 ## Learning algorithm
 
 DDPG is a cross between value-based and policy gradient algorithms. The Q-Learning side of DDPG approximates the max Q-value of a state-action pair. The policy gradient side of DDPG uses the Q-function to learn the policy. The high level steps in the training algorithm is as follows:
 
-* Sample experienes from the experience buffer.
+* Sample experiences from the experience buffer.
 * Train the critic by minimizing the TD-errors through stochastic gradient descent.
 * Train the actor by maximizing the Q-function through gradient ascent.
 
@@ -210,16 +167,6 @@ The algorithm also uses target networks for the actor and critic which are their
 
 <pre><code>
 def learn(self, experiences):
-        """
-        Train the actor and critic.
-
-        Parameters
-        ----------
-        experiences : list
-            Experiences (s,a,r,s1,d).
-
-
-        """
         
         # unpack experience
         states, actions, rewards, next_states, dones = experiences
@@ -274,30 +221,28 @@ def learn(self, experiences):
             
     
     def soft_update(self, target_model, model):
-        """
-        Soft update target networks.
-
-        """
+    
         with torch.no_grad():
             for target_params, params in zip(target_model.parameters(), model.parameters()):
                 target_params.data.copy_(self.tau*params + (1-self.tau)*target_params.data)
     
   </code></pre>
   
-  ## Hyperparameters
+## Hyperparameters
   
-  Following is a list of hyperparameters for the DDPG agent:
+Following hyperparameters are used for the DDPG agent:
   
-  * The experience buffer length is 10^6, which is sufficient to store a large set of experiences.
-  * The actor and critic learn rates are set to 1e-4 and 1e-3 respectively.
-  * The target networks are updated by a small smoothing factor of 1e-3. This removes sudden changes and improves training convergence.
-  * The discount factor of 0.99 encourages long term rewards.
-  * The noise mean is set to 0 with mean attraction constant set to 0.2 and variance set to 0.05. The variance decays at the rate of 0.001 until a minimum threshold of 0.05 is reached. These noise parameters were crafted carefully so that they do not introduce too much exploration as well as decay to near zero after 500 episodes.
+* The experience buffer length is 10^6, which is sufficient to store a large set of experiences.
+* The actor and critic learn rates are set to 1e-4 and 1e-3 respectively.
+* The target networks are updated by a small smoothing factor of 1e-3. This removes sudden changes and improves training convergence.
+* The discount factor of 0.99 encourages long term rewards.
+* The noise mean is set to 0 with mean attraction constant set to 0.2 and variance set to 0.05. The variance decays at the rate of 0.001 until a minimum threshold of 0.05 is reached. These noise parameters were crafted carefully so that they do not introduce too much exploration as well as decay to near zero after 500 episodes.
 
 ## Results
 
 Following are plots from the training process. It is seen that the agent learns sufficiently to reach the average reward of +30 in around 300 episodes. 
 
-[](./results_ddpg_losses.png)
+![Scores image](./results_ddpg_scores.png)
+![Losses image](./results_ddpg_losses.png)
   
   
