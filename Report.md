@@ -10,7 +10,7 @@ Both the actor and critic are modeled by neural networks as explained in the fol
 
 ### Actor
 
-The actor in a DDPG agent is a deterministic actor. It is modeled by a neural network that takes states as input and outputs the actions. In this implementation, the actor neural network has 2 fully connected layers with sizes 64 and 32. The output of the actor is bounded between -1 and 1 through a tanh layer. This network structure is simple and you will alter find that this is sufficient to train the agent.
+The actor in a DDPG agent is a deterministic actor. It is modeled by a neural network that takes states as input and outputs the actions. In this implementation, the actor neural network has 3 fully connected layers with output sizes 64, 32 and 4. The output of the actor is bounded between -1 and 1 through a tanh layer. This network structure is simple and you will alter find that this is sufficient to train the agent.
 
 ```python
 class DeterministicActor(nn.Module):
