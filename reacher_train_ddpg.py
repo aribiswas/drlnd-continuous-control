@@ -27,9 +27,6 @@ env = UnityEnvironment(file_name='Reacher20.app')
 brain_name = env.brain_names[0]
 brain = env.brains[brain_name]
 
-# reset the environment
-env_info = env.reset(train_mode=False)[brain_name]
-
 # observation and action specs
 osize = 33
 asize = 4

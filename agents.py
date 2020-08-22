@@ -16,7 +16,7 @@ import torch.nn.functional as F
 from model import StochasticActor, Critic
 from model import DeterministicActor, QCritic
 from utils import PPOMemory, discounted_rtg, gae, clipped_ppo_loss
-from utils import GaussianNoise, OUNoise, ExperienceBuffer
+from utils import OUNoise, ExperienceBuffer
 
 
 # ========== DDPG Agent =============
