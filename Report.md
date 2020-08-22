@@ -212,4 +212,8 @@ Following are plots from a sample training process. It is seen that the agent le
 ![Scores image](./results_ddpg_scores.png)
 ![Losses image](./results_ddpg_losses.png)
   
-  
+## Future work
+
+One improvement on the DDPG agent could be to implement a Proximal Policy Optimization (PPO) agent. PPO agents can be applied for continuous control tasks and are suitable for environments that have parallel agents. 
+
+There is already a working implementation of PPO algorithm in the repository under the **agents.py** module. Work is in progress to tune the PPO agent hyperparameters such that the agent can solve the environment sooner than DDPG. If you have suggestions on the PPO implementation, feel free to comment.
