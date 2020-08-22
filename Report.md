@@ -18,35 +18,22 @@ class DeterministicActor(nn.Module):
     def __init__(self, num_obs, num_act, seed=0):
         
         torch.manual_seed(seed)
-
         super(DeterministicActor, self).__init__()
-
         self.num_obs = num_obs
-
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        
         # layers
         self.fc1 = nn.Linear(num_obs,64)
         self.fc2 = nn.Linear(64,32)
         self.fc3 = nn.Linear(32,num_act)
         self.tanh = nn.Tanh()
-
-        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        
         
     def forward(self, state):
-        
-        # convert to torch
-        if isinstance(state, numpy.ndarray):
-            x = torch.from_numpy(state).float().to(self.device)
-        elif isinstance(state, torch.Tensor):
-            x = state
-        else:
-            raise TypeError("Input must be a numpy array or torch Tensor.")
         
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.tanh(self.fc3(x))
         return x
-        
         
     def mu(self, state):
         
@@ -94,9 +81,7 @@ class QCritic(nn.Module):
     def __init__(self, num_obs, num_act, seed=0):
         
         torch.manual_seed(seed)
-
         super(QCritic, self).__init__()
-
         self.num_obs = num_obs
 
         # ------ layers ------
@@ -116,21 +101,6 @@ class QCritic(nn.Module):
         
     def forward(self, state, action):
         
-        # convert to torch
-        if isinstance(state, numpy.ndarray):
-            s = torch.from_numpy(state).float().to(self.device)
-        elif isinstance(state, torch.Tensor):
-            s = state
-        else:
-            raise TypeError("Input must be a numpy array or torch Tensor.")
-            
-        if isinstance(action, numpy.ndarray):
-            a = torch.from_numpy(action).float().to(self.device)
-        elif isinstance(action, torch.Tensor):
-            a = action
-        else:
-            raise TypeError("Input must be a numpy array or torch Tensor.")
-
         # state path
         xs = F.relu(self.sfc1(s))
         xs = F.relu(self.sfc2(xs))
