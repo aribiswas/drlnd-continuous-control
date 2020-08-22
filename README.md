@@ -36,10 +36,11 @@ You can run the code from any Python IDE or a terminal.
 python reacher_sim_ddpg.py
 </code></pre>
 
+***Important***
 For both the above steps, you must change the **file_name** variable in the code to match the appropriate platform.
 
 ## Further reading
 
-If you are interested to read about the DDPG algorithm then read the project **Report.md**. It contains explanation on the algorithm, implementation and outlines what you may expect in the training process.
+If you are interested in the DDPG algorithm then read the project **Report.md**. It contains explanation on the training algorithm, outlines the implementation and summarizes what you may expect in the training process.
 
 *Ref: Deep Reinforcement Learning Nanodegree resources.*
