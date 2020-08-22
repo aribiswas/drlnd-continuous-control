@@ -6,13 +6,15 @@ The goal of this project is to train a reinforcement learning agent to perform c
 
 For this project, you will work with the Reacher environment.
 
+![Reacher anim](./reacher.gif)
+
 In this environment, a double-jointed arm can move to target locations. A reward of +0.1 is provided for each step that the agent's hand is in the goal location. Thus, the goal of your agent is to maintain its position at the target location for as many time steps as possible.
 
 There are multiple instances of the robot arm within this environment. Generating experiences through nultiple experiences improves the training of the reinforcement learning agent.
 
 The observation space consists of 33 variables corresponding to position, rotation, velocity, and angular velocities of the arm. Each action is a vector with four numbers, corresponding to torque applicable to two joints. Every entry in the action vector should be a number between -1 and 1.
 
-The environment is considered solved, when the average (over 100 episodes) of those average scores is at least +30. The above animation shows the performance of a trained agent.
+The environment is considered solved, when the average (over 100 episodes) of those average scores is at least +30. 
 
 ## Install dependencies
 
