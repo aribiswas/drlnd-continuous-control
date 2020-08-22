@@ -207,7 +207,7 @@ Following hyperparameters are used for the DDPG agent:
 
 ## Results
 
-Following are plots from the training process. It is seen that the agent learns sufficiently to reach the average reward of +30 in around 300 episodes. 
+Following are plots from a sample training process. It is seen that the agent learns sufficiently to reach the average reward of +30 in 238 episodes. Training was continued until the average reward value converged to around +35. 
 
 ![Scores image](./results_ddpg_scores.png)
 ![Losses image](./results_ddpg_losses.png)
