@@ -32,8 +32,7 @@ You can run the code from any Python IDE or a terminal.
 * To run the code in a Jupyter notebook, open the **Continuous_Control.ipynb** notebook. This notebook goes through starting the Unity environment, creating the agent, training and simulation.
 * To run from a terminal, run **reacher_train_ddpg.py** to train the agent, or **reacher_sim_ddpg.py** to watch a trained agent.
 
-<pre><code>
-python reacher_train_ddpg.py
+<pre><code>python reacher_train_ddpg.py
 python reacher_sim_ddpg.py
 </code></pre>
 
