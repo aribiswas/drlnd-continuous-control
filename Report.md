@@ -12,6 +12,7 @@ Both the actor and critic are modeled by neural networks as explained in the fol
 
 The actor in a DDPG agent is a deterministic actor. It is modeled by a neural network that takes states as input and outputs the actions. In this implementation, the actor neural network has 2 fully connected layers with sizes 64 and 32. The output of the actor is bounded between -1 and 1 through a tanh layer. This network structure is simple and you will alter find that this is sufficient to train the agent.
 
+```python
 <pre><code>class DeterministicActor(nn.Module):
     
     def __init__(self, num_obs, num_act, seed=0):
@@ -52,10 +53,11 @@ The actor in a DDPG agent is a deterministic actor. It is modeled by a neural ne
         return torch.clamp(self.forward(state), -1, 1)
         
 </code></pre>
-
+```
 
 During training, the agent explores the action space by introducing random exploration noise in its actions. This is performed by a noise model known as **Ornstein-Uhlenbeck action noise**, or more commonly, OU noise. The noise is parameterized by its mean, mean attraction constant and variance. The variance can be decayed to facilitate high exploration towards the beginning of training and exploitation later on.
 
+```python
 <pre><code>class OUNoise:
     
     def __init__(self, size, mean=0, mac=0.15, var=0.1, varmin=0.01, decay=1e-6, seed=0):
@@ -82,11 +84,13 @@ During training, the agent explores the action space by introducing random explo
         return self.x
 
 </code></pre>
+```
 
 ### Critic
 
 The critic in DDPG approximates the state-value function Q(s,a). The critic neural network used in this implementation takes states and actions as inputs and outputs the Q-value of the state-action pair. The state and action inputs are passed through their own fully connected layer after which the inputs are concatenatied and passed through additional fully connected layers. 
 
+```python
 <pre><code>class QCritic(nn.Module):
 
     def __init__(self, num_obs, num_act, seed=0):
@@ -150,6 +154,7 @@ The critic in DDPG approximates the state-value function Q(s,a). The critic neur
         return self.forward(state, action)
         
 </code></pre>
+```
 
 ## Learning algorithm
 
@@ -161,6 +166,7 @@ DDPG is a cross between value-based and policy gradient algorithms. The Q-Learni
 
 The algorithm also uses target networks for the actor and critic which are their time-delayed copies. These target networks are updated at regular intervals and greatly stabilize the training process.
 
+```python
 <pre><code>def learn(self, experiences):
         
         # unpack experience
@@ -220,9 +226,10 @@ The algorithm also uses target networks for the actor and critic which are their
         with torch.no_grad():
             for target_params, params in zip(target_model.parameters(), model.parameters()):
                 target_params.data.copy_(self.tau*params + (1-self.tau)*target_params.data)
-    
-  </code></pre>
-  
+
+</code></pre>
+```
+
 ## Hyperparameters
   
 Following hyperparameters are used for the DDPG agent:
