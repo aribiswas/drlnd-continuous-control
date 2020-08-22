@@ -121,3 +121,183 @@ class OUNoise:
         return self.x
 
 </code></pre>
+
+### Critic
+
+The critic in DDPG approximates the state-value function Q(s,a). The critic neural network used in this implementation takes states and actions as inputs and outputs the Q-value of the state-action pair. The state and action inputs are passed through their own fully connected layer after which the inputs are concatenatied and passed through additional fully connected layers. 
+
+<pre><code>
+class QCritic(nn.Module):
+
+    def __init__(self, num_obs, num_act, seed=0):
+        
+        torch.manual_seed(seed)
+
+        super(QCritic, self).__init__()
+
+        self.num_obs = num_obs
+
+        # ------ layers ------
+        
+        # state path
+        self.sfc1 = nn.Linear(num_obs,64)
+        self.sfc2 = nn.Linear(64,64)
+        
+        # action path
+        self.afc1 = nn.Linear(num_act,64)
+        self.afc2 = nn.Linear(64,64)
+        
+        # common path
+        self.cfc1 = nn.Linear(64*2,64)
+        self.cfc2 = nn.Linear(64,1)
+
+        
+    def forward(self, state, action):
+        """
+        Perform forward pass through the network.
+        
+        """
+        
+        # convert to torch
+        if isinstance(state, numpy.ndarray):
+            s = torch.from_numpy(state).float().to(self.device)
+        elif isinstance(state, torch.Tensor):
+            s = state
+        else:
+            raise TypeError("Input must be a numpy array or torch Tensor.")
+            
+        if isinstance(action, numpy.ndarray):
+            a = torch.from_numpy(action).float().to(self.device)
+        elif isinstance(action, torch.Tensor):
+            a = action
+        else:
+            raise TypeError("Input must be a numpy array or torch Tensor.")
+
+        # state path
+        xs = F.relu(self.sfc1(s))
+        xs = F.relu(self.sfc2(xs))
+        
+        # action path
+        xa = F.relu(self.afc1(a))
+        xa = F.relu(self.afc2(xa))
+        
+        # common path
+        xc = torch.cat((xs,xa), dim=1)
+        xc = F.relu(self.cfc1(xc))
+        xc = self.cfc2(xc)
+
+        return xc
+
+
+    def Q(self, state, action):
+        """
+        Compute Q(s,a)
+
+        """
+        
+        return self.forward(state, action)
+</code></pre>
+
+## Learning algorithm
+
+DDPG is a cross between value-based and policy gradient algorithms. The Q-Learning side of DDPG approximates the max Q-value of a state-action pair. The policy gradient side of DDPG uses the Q-function to learn the policy. The high level steps in the training algorithm is as follows:
+
+* Sample experienes from the experience buffer.
+* Train the critic by minimizing the TD-errors through stochastic gradient descent.
+* Train the actor by maximizing the Q-function through gradient ascent.
+
+The algorithm also uses target networks for the actor and critic which are their time-delayed copies. These target networks are updated at regular intervals and greatly stabilize the training process.
+
+<pre><code>
+def learn(self, experiences):
+        """
+        Train the actor and critic.
+
+        Parameters
+        ----------
+        experiences : list
+            Experiences (s,a,r,s1,d).
+
+
+        """
+        
+        # unpack experience
+        states, actions, rewards, next_states, dones = experiences
+        
+        # normalize rewards
+        #rewards = (rewards - np.mean(self.buffer.rew_buf)) / (np.std(self.buffer.rew_buf) + 1e-5)
+        
+        # compute td targets
+        with torch.no_grad():
+            target_action = self.target_actor.mu(next_states)
+            targetQ = self.target_critic.Q(next_states,target_action)
+            y = rewards + self.gamma * targetQ * (1-dones)
+        
+        # compute local Q values
+        Q = self.critic.Q(states, actions)
+        
+        # critic loss
+        critic_loss = torch.mean((y-Q)**2)
+
+        # update critic
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1)  # gradient clipping
+        self.critic_optimizer.step()
+        
+        # freeze critic before policy loss computation
+        for p in self.critic.parameters():
+            p.requires_grad = False
+        
+        # actor loss
+        actor_loss = -self.critic.Q(states, self.actor.mu(states)).mean()
+        
+        # update actor
+        self.actor_optimizer.zero_grad()
+        actor_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 1)  # gradient clipping
+        self.actor_optimizer.step()
+        
+        # Unfreeze critic
+        for p in self.critic.parameters():
+            p.requires_grad = True
+            
+        # log the loss and noise
+        self.actor_loss_log.append(actor_loss.detach().cpu().numpy())
+        self.critic_loss_log.append(critic_loss.detach().cpu().numpy())
+        self.noise_log.append(np.mean(self.noise_model.x))
+        
+        # soft update target actor and critic
+        if self.step_count % self.update_freq == 0:
+            self.soft_update(self.target_actor, self.actor)
+            self.soft_update(self.target_critic, self.critic)
+            
+    
+    def soft_update(self, target_model, model):
+        """
+        Soft update target networks.
+
+        """
+        with torch.no_grad():
+            for target_params, params in zip(target_model.parameters(), model.parameters()):
+                target_params.data.copy_(self.tau*params + (1-self.tau)*target_params.data)
+    
+  </code></pre>
+  
+  ## Hyperparameters
+  
+  Following is a list of hyperparameters for the DDPG agent:
+  
+  * The experience buffer length is 10^6, which is sufficient to store a large set of experiences.
+  * The actor and critic learn rates are set to 1e-4 and 1e-3 respectively.
+  * The target networks are updated by a small smoothing factor of 1e-3. This removes sudden changes and improves training convergence.
+  * The discount factor of 0.99 encourages long term rewards.
+  * The noise mean is set to 0 with mean attraction constant set to 0.2 and variance set to 0.05. The variance decays at the rate of 0.001 until a minimum threshold of 0.05 is reached. These noise parameters were crafted carefully so that they do not introduce too much exploration as well as decay to near zero after 500 episodes.
+
+## Results
+
+Following are plots from the training process. It is seen that the agent learns sufficiently to reach the average reward of +30 in around 300 episodes. 
+
+[](./results_ddpg_losses.png)
+  
+  
